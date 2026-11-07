@@ -18,7 +18,12 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   params?: Record<string, string | number | boolean | undefined>;
 }
 
-const API_BASE = '/api/v1';
+// In production this points straight at the deployed API host so requests
+// go browser -> API directly. Vercel's edge rewrite proxy (used for local
+// dev against `next.config.mjs`'s rewrites) refuses to forward to some
+// external hosts as an SSRF precaution (DNS_HOSTNAME_RESOLVED_PRIVATE), so
+// relying on it in production is not an option once the API lives elsewhere.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 function getStoredOrgId(): string {
   if (typeof window === 'undefined') return 'org_acme_cloud';
