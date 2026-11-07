@@ -1,0 +1,53 @@
+{
+  "name": "recruitflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RecruitFlow — Premium AI-Powered Recruitment Management System & Applicant Tracking System (ATS)",
+  "author": "RecruitFlow Engineering",
+  "license": "Commercial",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"API,WEB,WORKER\" -c \"blue,magenta,cyan\" \"npm run dev --workspace=@recruitflow/api\" \"npm run dev --workspace=@recruitflow/web\" \"npm run dev --workspace=@recruitflow/worker\"",
+    "dev:web": "npm run dev --workspace=@recruitflow/web",
+    "dev:api": "npm run dev --workspace=@recruitflow/api",
+    "dev:worker": "npm run dev --workspace=@recruitflow/worker",
+    "build": "npm run build --workspace=@recruitflow/types && npm run build --workspace=@recruitflow/shared && npm run build --workspace=@recruitflow/validation && npm run build --workspace=@recruitflow/api && npm run build --workspace=@recruitflow/worker && npm run build --workspace=@recruitflow/web",
+    "build:packages": "npm run build --workspace=@recruitflow/types && npm run build --workspace=@recruitflow/shared && npm run build --workspace=@recruitflow/validation",
+    "build:api": "npm run build --workspace=@recruitflow/api",
+    "build:web": "npm run build --workspace=@recruitflow/web",
+    "build:worker": "npm run build --workspace=@recruitflow/worker",
+    "start:api": "npm run start:prod --workspace=@recruitflow/api",
+    "start:web": "npm run start --workspace=@recruitflow/web",
+    "start:worker": "npm run start --workspace=@recruitflow/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace=@recruitflow/api",
+    "db:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema=./prisma/schema.prisma",
+    "db:migrate:dev": "prisma migrate dev --schema=./prisma/schema.prisma",
+    "db:push": "prisma db push --schema=./prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio --schema=./prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "concurrently": "^9.1.2",
+    "prisma": "^6.4.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  }
+}
+

@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Builds
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment Variables (Never commit real secrets)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Storage & Runtime
+.pgdata/
+storage/uploads/*
+!storage/uploads/.gitkeep
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+

@@ -1,0 +1,10 @@
+{
+  "name": "@recruitflow/config",
+  "version": "1.0.0",
+  "private": true,
+  "files": [
+    "tsconfig.node.json",
+    "tsconfig.next.json"
+  ]
+}
+

@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #4F46E5;
+  --primary-hover: #4338CA;
+  --primary-subtle: #EEF2FF;
+  --secondary: #0EA5E9;
+  --bg-app: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-surface-muted: #F1F5F9;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --border-default: #E2E8F0;
+}
+
+.dark {
+  --primary: #6366F1;
+  --primary-hover: #4F46E5;
+  --primary-subtle: #1E1B4B;
+  --secondary: #38BDF8;
+  --bg-app: #090D16;
+  --bg-surface: #0F172A;
+  --bg-surface-muted: #1E293B;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-default: #1E293B;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/*
+ * A card entering a Kanban column (e.g. after a cross-column drag) is a
+ * freshly mounted DOM node with no prior position for dnd-kit's own
+ * transform-based reorder animation to ease in from, so it would otherwise
+ * just pop in at full opacity. This fades it in instead. It deliberately
+ * only touches opacity, never transform, so it can't fight dnd-kit's own
+ * inline transform/transition used for in-column reordering.
+ */
+@keyframes kanban-card-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.kanban-card-enter {
+  animation: kanban-card-enter 200ms ease-out;
+}
