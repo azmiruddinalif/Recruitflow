@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/main.js",
-    "start:prod": "node dist/main.js",
+    "start": "node dist/src/main.js",
+    "start:prod": "node dist/src/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.config.ts test/e2e"
