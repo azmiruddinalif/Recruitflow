@@ -15,7 +15,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
       className={cn('p-3', className)}
       classNames={{
         root: 'w-fit',
-        months: 'flex flex-col sm:flex-row gap-4',
+        months: 'relative flex flex-col sm:flex-row gap-4',
         month: 'flex flex-col gap-3',
         month_caption: 'flex justify-center pt-1 relative items-center h-8',
         caption_label: 'text-[13px] font-semibold text-slate-900',
