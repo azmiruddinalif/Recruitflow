@@ -1,6 +1,7 @@
 import { BadRequestException, ExecutionContext, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { describe, expect, it, vi } from 'vitest';
+import Stripe from 'stripe';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { OrganizationGuard } from '../../src/common/guards/organization.guard';
 import { PermissionsGuard } from '../../src/common/guards/permissions.guard';
 import { CandidatesService } from '../../src/modules/candidates/candidates.service';
@@ -95,12 +96,89 @@ describe('RecruitFlow Multi-Tenant Isolation, RBAC, Storage & Webhook Security (
     expect(() => guard.canActivate(mockContext)).toThrow(ForbiddenException);
   });
 
-  it('5. verifies Stripe webhook rejects unsigned requests', async () => {
-    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_secret';
-    const subscriptionsService = new SubscriptionsService({} as never);
-    await expect(
-      subscriptionsService.handleStripeWebhook(undefined, { type: 'checkout.session.completed' }),
-    ).rejects.toThrow(BadRequestException);
-    delete process.env.STRIPE_WEBHOOK_SECRET;
+  describe('5. Stripe webhook security', () => {
+    const originalSecretKey = process.env.STRIPE_SECRET_KEY;
+    const originalWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    const testWebhookSecret = 'whsec_test_secret';
+
+    beforeEach(() => {
+      delete process.env.STRIPE_SECRET_KEY;
+      delete process.env.STRIPE_WEBHOOK_SECRET;
+    });
+
+    afterEach(() => {
+      if (originalSecretKey) process.env.STRIPE_SECRET_KEY = originalSecretKey;
+      else delete process.env.STRIPE_SECRET_KEY;
+      if (originalWebhookSecret) process.env.STRIPE_WEBHOOK_SECRET = originalWebhookSecret;
+      else delete process.env.STRIPE_WEBHOOK_SECRET;
+    });
+
+    it('5a. is disabled (404) by default in self-hosted mode (no Stripe keys configured)', async () => {
+      const subscriptionsService = new SubscriptionsService({} as never);
+      await expect(
+        subscriptionsService.handleStripeWebhook('any-signature', Buffer.from('{}')),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('5b. rejects requests with a missing signature even when Stripe is configured', async () => {
+      process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+      process.env.STRIPE_WEBHOOK_SECRET = testWebhookSecret;
+      const subscriptionsService = new SubscriptionsService({} as never);
+      await expect(
+        subscriptionsService.handleStripeWebhook(undefined, Buffer.from('{"type":"checkout.session.completed"}')),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('5c. rejects a forged/unsigned payload with an invalid signature', async () => {
+      process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+      process.env.STRIPE_WEBHOOK_SECRET = testWebhookSecret;
+      const subscriptionsService = new SubscriptionsService({} as never);
+      await expect(
+        subscriptionsService.handleStripeWebhook(
+          'forged-signature-not-matching-payload',
+          Buffer.from('{"type":"checkout.session.completed"}'),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('5d. accepts a genuinely signed event and records it for idempotency', async () => {
+      process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+      process.env.STRIPE_WEBHOOK_SECRET = testWebhookSecret;
+
+      const payload = JSON.stringify({ id: 'evt_test_1', type: 'checkout.session.completed' });
+      const signature = Stripe.webhooks.generateTestHeaderString({
+        payload,
+        secret: testWebhookSecret,
+      });
+
+      const created = vi.fn().mockResolvedValue({ id: 'row_1', stripeEventId: 'evt_test_1' });
+      const mockPrisma = { stripeWebhookEvent: { create: created } };
+      const subscriptionsService = new SubscriptionsService(mockPrisma as never);
+
+      const result = await subscriptionsService.handleStripeWebhook(signature, Buffer.from(payload));
+      expect(result).toEqual({ received: true, eventType: 'checkout.session.completed' });
+      expect(created).toHaveBeenCalledWith({
+        data: { stripeEventId: 'evt_test_1', type: 'checkout.session.completed' },
+      });
+    });
+
+    it('5e. ignores a duplicate delivery of an already-processed event (idempotency)', async () => {
+      process.env.STRIPE_SECRET_KEY = 'sk_test_fake';
+      process.env.STRIPE_WEBHOOK_SECRET = testWebhookSecret;
+
+      const payload = JSON.stringify({ id: 'evt_test_2', type: 'invoice.paid' });
+      const signature = Stripe.webhooks.generateTestHeaderString({
+        payload,
+        secret: testWebhookSecret,
+      });
+
+      const duplicateError = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      const created = vi.fn().mockRejectedValue(duplicateError);
+      const mockPrisma = { stripeWebhookEvent: { create: created } };
+      const subscriptionsService = new SubscriptionsService(mockPrisma as never);
+
+      const result = await subscriptionsService.handleStripeWebhook(signature, Buffer.from(payload));
+      expect(result).toEqual({ received: true, duplicate: true });
+    });
   });
 });

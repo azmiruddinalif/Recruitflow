@@ -1,9 +1,29 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import Stripe from 'stripe';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class SubscriptionsService {
+  private readonly logger = new Logger(SubscriptionsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Both STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET must be set to enable
+   * Stripe SaaS mode. RecruitFlow ships self-hosted by default (neither set),
+   * so the webhook endpoint is disabled unless an operator explicitly opts in.
+   */
+  private get stripeSaasModeEnabled(): boolean {
+    return Boolean(process.env.STRIPE_SECRET_KEY?.trim() && process.env.STRIPE_WEBHOOK_SECRET?.trim());
+  }
+
+  private getStripeClient(): Stripe {
+    const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
+    if (!secretKey) {
+      throw new BadRequestException('Stripe is not configured.');
+    }
+    return new Stripe(secretKey);
+  }
 
   async listPlans() {
     return this.prisma.subscriptionPlan.findMany({
@@ -105,13 +125,48 @@ export class SubscriptionsService {
     };
   }
 
-  async handleStripeWebhook(signature: string | undefined, payload: Record<string, unknown>) {
-    if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      throw new BadRequestException('Stripe webhook secret is not configured.');
+  /**
+   * Verifies and records a Stripe webhook delivery. Disabled entirely
+   * (404) unless an operator has explicitly configured Stripe SaaS mode.
+   * Verified events are recorded for idempotency but do not yet mutate
+   * Subscription state — that lands alongside real Checkout session
+   * creation in a future phase, so no half-built billing logic ships here.
+   */
+  async handleStripeWebhook(signature: string | undefined, rawBody: Buffer | undefined) {
+    if (!this.stripeSaasModeEnabled) {
+      throw new NotFoundException('Not found.');
     }
     if (!signature) {
       throw new BadRequestException('Missing Stripe-Signature header.');
     }
-    return { received: true, eventType: payload.type ?? 'unknown' };
+    if (!rawBody || rawBody.length === 0) {
+      throw new BadRequestException('Missing request body.');
+    }
+
+    const stripe = this.getStripeClient();
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!.trim();
+
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    } catch (error) {
+      this.logger.warn(`Rejected Stripe webhook with invalid signature: ${(error as Error).message}`);
+      throw new BadRequestException('Invalid Stripe webhook signature.');
+    }
+
+    try {
+      await this.prisma.stripeWebhookEvent.create({
+        data: { stripeEventId: event.id, type: event.type },
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') {
+        this.logger.log(`Ignoring duplicate Stripe webhook delivery for event ${event.id}`);
+        return { received: true, duplicate: true };
+      }
+      throw error;
+    }
+
+    this.logger.log(`Verified Stripe webhook event ${event.id} (${event.type}) — recorded, no handler wired yet.`);
+    return { received: true, eventType: event.type };
   }
 }

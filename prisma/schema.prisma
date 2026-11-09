@@ -201,19 +201,19 @@ model User {
   invitations Invitation[]         @relation("InvitedByUser")
 
   // Business relations
-  createdCandidates      Candidate[]                @relation("CandidateCreatedBy")
-  candidateNotes         CandidateNote[]
-  createdJobs            Job[]                      @relation("JobCreatedBy")
-  hiringManagerJobs      Job[]                      @relation("JobHiringManager")
-  assignedApplications   JobApplication[]           @relation("ApplicationAssignedRecruiter")
-  statusChanges          ApplicationStatusHistory[]
-  applicationNotes       ApplicationNote[]
-  scheduledInterviews    Interview[]                @relation("InterviewScheduledBy")
+  createdCandidates       Candidate[]                @relation("CandidateCreatedBy")
+  candidateNotes          CandidateNote[]
+  createdJobs             Job[]                      @relation("JobCreatedBy")
+  hiringManagerJobs       Job[]                      @relation("JobHiringManager")
+  assignedApplications    JobApplication[]           @relation("ApplicationAssignedRecruiter")
+  statusChanges           ApplicationStatusHistory[]
+  applicationNotes        ApplicationNote[]
+  scheduledInterviews     Interview[]                @relation("InterviewScheduledBy")
   interviewParticipations InterviewParticipant[]
-  interviewFeedbacks     InterviewFeedback[]
-  notifications          Notification[]
-  activityLogs           ActivityLog[]
-  aiUsageLogs            AIUsageLog[]
+  interviewFeedbacks      InterviewFeedback[]
+  notifications           Notification[]
+  activityLogs            ActivityLog[]
+  aiUsageLogs             AIUsageLog[]
 
   @@index([email])
   @@index([isSuperAdmin])
@@ -305,20 +305,20 @@ model Organization {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  members      OrganizationMember[]
-  invitations  Invitation[]
-  roles        Role[]
-  settings     OrganizationSettings?
-  candidates   Candidate[]
-  jobs         Job[]
-  applications JobApplication[]
-  interviews   Interview[]
-  aiProviders  AIProvider[]
-  aiUsageLogs  AIUsageLog[]
+  members       OrganizationMember[]
+  invitations   Invitation[]
+  roles         Role[]
+  settings      OrganizationSettings?
+  candidates    Candidate[]
+  jobs          Job[]
+  applications  JobApplication[]
+  interviews    Interview[]
+  aiProviders   AIProvider[]
+  aiUsageLogs   AIUsageLog[]
   notifications Notification[]
-  activityLogs ActivityLog[]
-  subscription Subscription?
-  payments     Payment[]
+  activityLogs  ActivityLog[]
+  subscription  Subscription?
+  payments      Payment[]
 
   @@index([slug])
   @@index([isActive])
@@ -326,19 +326,19 @@ model Organization {
 }
 
 model OrganizationSettings {
-  id                       String          @id @default(cuid())
-  organizationId           String          @unique
-  defaultTimezone          String          @default("UTC")
-  defaultCurrency          String          @default("USD")
-  brandPrimaryColor        String          @default("#4F46E5")
-  careerPageEnabled        Boolean         @default(true)
-  allowAIResumeParsing     Boolean         @default(true)
-  allowAICandidateMatching Boolean         @default(true)
-  defaultAIProvider        AIProviderType?
-  emailNotificationsEnabled Boolean        @default(true)
-  pipelineStagesJson       Json?
-  createdAt                DateTime        @default(now())
-  updatedAt                DateTime        @updatedAt
+  id                        String          @id @default(cuid())
+  organizationId            String          @unique
+  defaultTimezone           String          @default("UTC")
+  defaultCurrency           String          @default("USD")
+  brandPrimaryColor         String          @default("#4F46E5")
+  careerPageEnabled         Boolean         @default(true)
+  allowAIResumeParsing      Boolean         @default(true)
+  allowAICandidateMatching  Boolean         @default(true)
+  defaultAIProvider         AIProviderType?
+  emailNotificationsEnabled Boolean         @default(true)
+  pipelineStagesJson        Json?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -443,34 +443,34 @@ model Invitation {
 // ============================================================================
 
 model Candidate {
-  id                  String          @id @default(cuid())
-  organizationId      String
-  firstName           String
-  lastName            String
-  fullName            String
-  email               String
-  phone               String?
-  location            String?
-  currentTitle        String?
-  currentCompany      String?
+  id                   String          @id @default(cuid())
+  organizationId       String
+  firstName            String
+  lastName             String
+  fullName             String
+  email                String
+  phone                String?
+  location             String?
+  currentTitle         String?
+  currentCompany       String?
   totalExperienceYears Float?
-  summary             String?         @db.Text
-  linkedinUrl         String?
-  portfolioUrl        String?
-  githubUrl           String?
-  expectedSalaryMin   Int?
-  expectedSalaryMax   Int?
-  salaryCurrency      String          @default("USD")
-  noticePeriodDays    Int?
-  source              CandidateSource @default(DIRECT_APPLY)
-  sourceDetails       String?
-  tags                String[]        @default([])
-  languages           String[]        @default([])
-  consentGiven        Boolean         @default(true)
-  createdById         String?
-  deletedAt           DateTime?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  summary              String?         @db.Text
+  linkedinUrl          String?
+  portfolioUrl         String?
+  githubUrl            String?
+  expectedSalaryMin    Int?
+  expectedSalaryMax    Int?
+  salaryCurrency       String          @default("USD")
+  noticePeriodDays     Int?
+  source               CandidateSource @default(DIRECT_APPLY)
+  sourceDetails        String?
+  tags                 String[]        @default([])
+  languages            String[]        @default([])
+  consentGiven         Boolean         @default(true)
+  createdById          String?
+  deletedAt            DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
   organization   Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy      User?                    @relation("CandidateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -629,39 +629,39 @@ model CandidateAttachment {
 // ============================================================================
 
 model Job {
-  id                    String           @id @default(cuid())
-  organizationId        String
-  title                 String
-  slug                  String
-  code                  String?
-  department            String
-  location              String
-  workLocationType      WorkLocationType @default(ONSITE)
-  employmentType        EmploymentType   @default(FULL_TIME)
-  experienceLevel       ExperienceLevel  @default(MID)
-  minExperienceYears    Int              @default(0)
-  maxExperienceYears    Int?
-  salaryMin             Int?
-  salaryMax             Int?
-  salaryCurrency        String           @default("USD")
-  showSalary            Boolean          @default(true)
-  description           String           @db.Text
-  responsibilities      String[]         @default([])
-  qualifications        String[]         @default([])
-  benefits              String[]         @default([])
-  educationRequirement  String?
-  openingsCount         Int              @default(1)
-  status                JobStatus        @default(DRAFT)
-  pipelineConfigJson    Json?
-  applicationDeadline   DateTime?
-  publishedAt           DateTime?
-  closedAt              DateTime?
-  hiringManagerId       String?
-  createdById           String?
-  aiGenerated           Boolean          @default(false)
-  deletedAt             DateTime?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  id                   String           @id @default(cuid())
+  organizationId       String
+  title                String
+  slug                 String
+  code                 String?
+  department           String
+  location             String
+  workLocationType     WorkLocationType @default(ONSITE)
+  employmentType       EmploymentType   @default(FULL_TIME)
+  experienceLevel      ExperienceLevel  @default(MID)
+  minExperienceYears   Int              @default(0)
+  maxExperienceYears   Int?
+  salaryMin            Int?
+  salaryMax            Int?
+  salaryCurrency       String           @default("USD")
+  showSalary           Boolean          @default(true)
+  description          String           @db.Text
+  responsibilities     String[]         @default([])
+  qualifications       String[]         @default([])
+  benefits             String[]         @default([])
+  educationRequirement String?
+  openingsCount        Int              @default(1)
+  status               JobStatus        @default(DRAFT)
+  pipelineConfigJson   Json?
+  applicationDeadline  DateTime?
+  publishedAt          DateTime?
+  closedAt             DateTime?
+  hiringManagerId      String?
+  createdById          String?
+  aiGenerated          Boolean          @default(false)
+  deletedAt            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
   organization  Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   hiringManager User?              @relation("JobHiringManager", fields: [hiringManagerId], references: [id], onDelete: SetNull)
@@ -772,25 +772,25 @@ model ApplicationNote {
 }
 
 model AICandidateMatch {
-  id                   String         @id @default(cuid())
-  organizationId       String
-  jobId                String
-  applicationId        String         @unique
-  candidateId          String
-  overallScore         Int
-  skillsScore          Int
-  experienceScore      Int
-  educationScore       Int
-  matchingSkills       String[]       @default([])
-  missingSkills        String[]       @default([])
-  relevantExperience   String         @db.Text
-  explanation          String         @db.Text
-  recommendations      String[]       @default([])
-  aiProvider           AIProviderType
-  aiModel              String
-  evaluatedAt          DateTime       @default(now())
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  organizationId     String
+  jobId              String
+  applicationId      String         @unique
+  candidateId        String
+  overallScore       Int
+  skillsScore        Int
+  experienceScore    Int
+  educationScore     Int
+  matchingSkills     String[]       @default([])
+  missingSkills      String[]       @default([])
+  relevantExperience String         @db.Text
+  explanation        String         @db.Text
+  recommendations    String[]       @default([])
+  aiProvider         AIProviderType
+  aiModel            String
+  evaluatedAt        DateTime       @default(now())
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   job         Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
   application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
@@ -805,26 +805,26 @@ model AICandidateMatch {
 // ============================================================================
 
 model Interview {
-  id                String          @id @default(cuid())
-  organizationId    String
-  applicationId     String
-  title             String
-  description       String?         @db.Text
-  type              InterviewType   @default(VIDEO)
-  status            InterviewStatus @default(SCHEDULED)
-  scheduledAt       DateTime
-  durationMinutes   Int             @default(45)
-  timezone          String          @default("UTC")
-  locationOrLink    String?
-  agendaNotes       String?         @db.Text
-  aiSummary         String?         @db.Text
-  aiQuestionsJson   Json?
-  cancelReason      String?
-  scheduledById     String?
-  completedAt       DateTime?
-  canceledAt        DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  organizationId  String
+  applicationId   String
+  title           String
+  description     String?         @db.Text
+  type            InterviewType   @default(VIDEO)
+  status          InterviewStatus @default(SCHEDULED)
+  scheduledAt     DateTime
+  durationMinutes Int             @default(45)
+  timezone        String          @default("UTC")
+  locationOrLink  String?
+  agendaNotes     String?         @db.Text
+  aiSummary       String?         @db.Text
+  aiQuestionsJson Json?
+  cancelReason    String?
+  scheduledById   String?
+  completedAt     DateTime?
+  canceledAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   application  JobApplication         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
@@ -855,21 +855,21 @@ model InterviewParticipant {
 }
 
 model InterviewFeedback {
-  id                   String               @id @default(cuid())
-  interviewId          String
-  reviewerId           String
-  overallRating        Int
-  technicalScore       Int?
-  communicationScore   Int?
-  problemSolvingScore  Int?
-  cultureFitScore      Int?
-  criteriaRatingsJson  Json?
-  strengths            String?              @db.Text
-  concerns             String?              @db.Text
-  notes                String?              @db.Text
-  recommendation       HiringRecommendation
-  submittedAt          DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  id                  String               @id @default(cuid())
+  interviewId         String
+  reviewerId          String
+  overallRating       Int
+  technicalScore      Int?
+  communicationScore  Int?
+  problemSolvingScore Int?
+  cultureFitScore     Int?
+  criteriaRatingsJson Json?
+  strengths           String?              @db.Text
+  concerns            String?              @db.Text
+  notes               String?              @db.Text
+  recommendation      HiringRecommendation
+  submittedAt         DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
   interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   reviewer  User      @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
@@ -884,18 +884,18 @@ model InterviewFeedback {
 // ============================================================================
 
 model AIProvider {
-  id             String         @id @default(cuid())
-  organizationId String?
-  provider       AIProviderType
-  displayName    String
-  apiKeyEncrypted String?       @db.Text
-  defaultModel   String
-  isEnabled      Boolean        @default(false)
-  isDefault      Boolean        @default(false)
-  timeoutMs      Int            @default(30000)
-  maxRetries     Int            @default(2)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id              String         @id @default(cuid())
+  organizationId  String?
+  provider        AIProviderType
+  displayName     String
+  apiKeyEncrypted String?        @db.Text
+  defaultModel    String
+  isEnabled       Boolean        @default(false)
+  isDefault       Boolean        @default(false)
+  timeoutMs       Int            @default(30000)
+  maxRetries      Int            @default(2)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -971,25 +971,25 @@ model ActivityLog {
 }
 
 model SubscriptionPlan {
-  id                String   @id @default(cuid())
-  code              String   @unique
-  name              String
-  description       String
-  priceMonthlyCents Int      @default(0)
-  priceYearlyCents  Int      @default(0)
-  currency          String   @default("USD")
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  name               String
+  description        String
+  priceMonthlyCents  Int      @default(0)
+  priceYearlyCents   Int      @default(0)
+  currency           String   @default("USD")
   stripePriceMonthId String?
   stripePriceYearId  String?
-  maxJobs           Int      @default(5)
-  maxCandidates     Int      @default(250)
-  maxMembers        Int      @default(5)
-  aiCreditsMonthly  Int      @default(50)
-  features          String[] @default([])
-  isPublic          Boolean  @default(true)
-  isActive          Boolean  @default(true)
-  sortOrder         Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  maxJobs            Int      @default(5)
+  maxCandidates      Int      @default(250)
+  maxMembers         Int      @default(5)
+  aiCreditsMonthly   Int      @default(50)
+  features           String[] @default([])
+  isPublic           Boolean  @default(true)
+  isActive           Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   subscriptions Subscription[]
 
@@ -1041,3 +1041,11 @@ model Payment {
   @@map("payments")
 }
 
+model StripeWebhookEvent {
+  id            String   @id @default(cuid())
+  stripeEventId String   @unique
+  type          String
+  receivedAt    DateTime @default(now())
+
+  @@map("stripe_webhook_events")
+}

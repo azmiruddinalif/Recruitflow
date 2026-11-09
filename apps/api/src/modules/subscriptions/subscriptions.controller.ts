@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Headers, Post, UseGuards } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import type { AuthenticatedOrganizationContext, AuthenticatedUser } from '@recruitflow/types';
 import { CurrentOrg } from '../../common/decorators/current-org.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -49,11 +51,11 @@ export class SubscriptionsController {
 
   @Post('webhook')
   @Public()
-  @ApiOperation({ summary: 'Stripe webhook endpoint' })
+  @ApiOperation({ summary: 'Stripe webhook endpoint (disabled unless Stripe SaaS mode is configured)' })
   async webhook(
     @Headers('stripe-signature') signature: string | undefined,
-    @Body() payload: Record<string, unknown>,
+    @Req() req: RawBodyRequest<Request>,
   ) {
-    return this.subscriptionsService.handleStripeWebhook(signature, payload);
+    return this.subscriptionsService.handleStripeWebhook(signature, req.rawBody);
   }
 }

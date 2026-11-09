@@ -25,6 +25,7 @@ import { useCreateApplication } from '@/features/applications/use-applications';
 import { useJobsList } from '@/features/jobs/use-jobs';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
 import { ApiClientError } from '@/lib/api-client';
+import { createCandidateSchema } from '@recruitflow/validation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -67,17 +68,54 @@ export default function CandidatesPage() {
   }, [jobs, applyJobId]);
 
   // New Candidate Form State
-  const [firstName, setFirstName] = React.useState('');
-  const [lastName, setLastName] = React.useState('');
-  const [email, setEmail] = React.useState('');
-  const [phone, setPhone] = React.useState('');
-  const [location, setLocation] = React.useState('');
-  const [currentTitle, setCurrentTitle] = React.useState('');
-  const [currentCompany, setCurrentCompany] = React.useState('');
-  const [totalExperienceYears, setTotalExperienceYears] = React.useState(4);
-  const [skillsText, setSkillsText] = React.useState('');
-  const [summary, setSummary] = React.useState('');
-  const [source, setSource] = React.useState('LINKEDIN');
+  const emptyCandidateForm = {
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    location: '',
+    currentTitle: '',
+    currentCompany: '',
+    totalExperienceYears: 4,
+    skillsText: '',
+    summary: '',
+    source: 'LINKEDIN',
+  };
+  const [firstName, setFirstName] = React.useState(emptyCandidateForm.firstName);
+  const [lastName, setLastName] = React.useState(emptyCandidateForm.lastName);
+  const [email, setEmail] = React.useState(emptyCandidateForm.email);
+  const [phone, setPhone] = React.useState(emptyCandidateForm.phone);
+  const [location, setLocation] = React.useState(emptyCandidateForm.location);
+  const [currentTitle, setCurrentTitle] = React.useState(emptyCandidateForm.currentTitle);
+  const [currentCompany, setCurrentCompany] = React.useState(emptyCandidateForm.currentCompany);
+  const [totalExperienceYears, setTotalExperienceYears] = React.useState(
+    emptyCandidateForm.totalExperienceYears,
+  );
+  const [skillsText, setSkillsText] = React.useState(emptyCandidateForm.skillsText);
+  const [summary, setSummary] = React.useState(emptyCandidateForm.summary);
+  const [source, setSource] = React.useState(emptyCandidateForm.source);
+  const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
+
+  const resetCandidateForm = React.useCallback(() => {
+    setFirstName(emptyCandidateForm.firstName);
+    setLastName(emptyCandidateForm.lastName);
+    setEmail(emptyCandidateForm.email);
+    setPhone(emptyCandidateForm.phone);
+    setLocation(emptyCandidateForm.location);
+    setCurrentTitle(emptyCandidateForm.currentTitle);
+    setCurrentCompany(emptyCandidateForm.currentCompany);
+    setTotalExperienceYears(emptyCandidateForm.totalExperienceYears);
+    setSkillsText(emptyCandidateForm.skillsText);
+    setSummary(emptyCandidateForm.summary);
+    setSource(emptyCandidateForm.source);
+    setFormErrors({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    resetCandidateForm();
+  };
 
   const handleCreateCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,31 +125,44 @@ export default function CandidatesPage() {
       .filter(Boolean)
       .map((name) => ({ name }));
 
-    try {
-      const created = await createCandidate.mutateAsync({
-        firstName,
-        lastName,
-        email,
-        phone: phone || undefined,
-        location: location || undefined,
-        currentTitle: currentTitle || undefined,
-        currentCompany: currentCompany || undefined,
-        totalExperienceYears: Number(totalExperienceYears) || 0,
-        summary: summary || undefined,
-        source,
-        salaryCurrency: 'USD',
-        tags: parsedSkills.slice(0, 3).map((s) => s.name),
-        languages: [],
-        skills: parsedSkills,
-        experiences: [],
-        educations: [],
-        certifications: [],
-      });
+    const candidatePayload = {
+      firstName,
+      lastName,
+      email,
+      phone: phone || undefined,
+      location: location || undefined,
+      currentTitle: currentTitle || undefined,
+      currentCompany: currentCompany || undefined,
+      totalExperienceYears: Number(totalExperienceYears) || 0,
+      summary: summary || undefined,
+      source,
+      salaryCurrency: 'USD',
+      tags: parsedSkills.slice(0, 3).map((s) => s.name),
+      languages: [],
+      skills: parsedSkills,
+      experiences: [],
+      educations: [],
+      certifications: [],
+    };
 
+    const validation = createCandidateSchema.safeParse(candidatePayload);
+    if (!validation.success) {
+      const fieldErrors = validation.error.flatten().fieldErrors;
+      setFormErrors(
+        Object.fromEntries(
+          Object.entries(fieldErrors)
+            .filter(([, messages]) => messages && messages.length > 0)
+            .map(([field, messages]) => [field, messages![0]]),
+        ),
+      );
+      return;
+    }
+    setFormErrors({});
+
+    try {
+      const created = await createCandidate.mutateAsync(candidatePayload);
+      resetCandidateForm();
       setShowAddModal(false);
-      setFirstName('');
-      setLastName('');
-      setEmail('');
       setSelectedCandidateId(created.id);
       pushToast('Candidate profile created', `${created.fullName} has been added.`, 'success');
     } catch (error) {
@@ -320,36 +371,36 @@ export default function CandidatesPage() {
       {/* Add Candidate Modal */}
       <Modal
         open={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        onClose={closeAddModal}
         title="Add New Candidate Profile"
         description="Create a structured candidate record or use AI Studio to auto-parse a PDF/DOCX resume."
         maxWidth="xl"
       >
-        <form onSubmit={handleCreateCandidate} className="space-y-4">
+        <form onSubmit={handleCreateCandidate} noValidate className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="First Name"
-              required
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
               placeholder="Elena"
+              error={formErrors.firstName}
             />
             <Input
               label="Last Name"
-              required
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
               placeholder="Rostova"
+              error={formErrors.lastName}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input
               label="Email Address"
               type="email"
-              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="elena.rostova@tech.io"
+              error={formErrors.email}
             />
             <Input
               label="Phone Number"
@@ -413,7 +464,7 @@ export default function CandidatesPage() {
             />
           </div>
           <div className="flex justify-end gap-2.5 border-t border-[#E2E8F0] pt-4">
-            <Button variant="outline" onClick={() => setShowAddModal(false)}>
+            <Button type="button" variant="outline" onClick={closeAddModal}>
               Cancel
             </Button>
             <Button type="submit" disabled={createCandidate.isPending}>

@@ -230,18 +230,26 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                         />
                         <span>{item.name}</span>
                       </span>
-                      {item.badge !== undefined && (
-                        <span
-                          className={cn(
-                            'rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-                            isActive
-                              ? 'bg-[#4F46E5] text-white'
-                              : 'bg-slate-100 text-slate-600',
-                          )}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
+                      {item.badge !== undefined &&
+                        (() => {
+                          const isCompactCount =
+                            typeof item.badge === 'number' && item.badge < 100;
+                          return (
+                            <span
+                              className={cn(
+                                'inline-flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold leading-none',
+                                isCompactCount
+                                  ? 'aspect-square h-[18px]'
+                                  : 'h-[18px] min-w-[18px] px-1.5',
+                                isActive
+                                  ? 'bg-[#4F46E5] text-white'
+                                  : 'bg-slate-100 text-slate-600',
+                              )}
+                            >
+                              {item.badge}
+                            </span>
+                          );
+                        })()}
                     </Link>
                   );
                 })}

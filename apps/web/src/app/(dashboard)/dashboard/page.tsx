@@ -17,6 +17,7 @@ import { useDashboardMetrics } from '@/features/analytics/use-analytics';
 import { useApplicationsKanban } from '@/features/applications/use-applications';
 import { StatCard } from '@/components/shared/stat-card';
 import { AIMatchBadge } from '@/components/shared/ai-match-badge';
+import { DateRangeFilter, type DatePresetId } from '@/components/shared/date-range-picker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   HiringVelocityChart,
@@ -27,7 +28,7 @@ import { formatDateTime, getApplicationStageStyle } from '@/lib/utils';
 export default function DashboardPage() {
   const { activeOrganization } = useRecruitFlow();
 
-  const [dateRange, setDateRange] = React.useState<'7d' | '30d' | '90d' | '1y' | 'custom'>('30d');
+  const [dateRange, setDateRange] = React.useState<DatePresetId>('30d');
   const [customFrom, setCustomFrom] = React.useState('2026-01-01');
   const [customTo, setCustomTo] = React.useState('2026-12-31');
 
@@ -47,13 +48,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
               Executive Recruitment Dashboard
             </h1>
-            <span className="rounded-md border border-indigo-200 bg-[#EEF2FF] px-2 py-0.5 text-xs font-semibold text-[#4F46E5]">
+            <span className="shrink-0 whitespace-nowrap rounded-md border border-indigo-200 bg-[#EEF2FF] px-2 py-0.5 text-xs font-semibold text-[#4F46E5]">
               {activeOrganization.name}
             </span>
           </div>
@@ -62,59 +63,29 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
-            {(
-              [
-                { id: '7d', label: 'Last 7d' },
-                { id: '30d', label: 'Last 30d' },
-                { id: '90d', label: 'Last 90d' },
-                { id: '1y', label: 'This Year' },
-                { id: 'custom', label: 'Custom' },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setDateRange(opt.id)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  dateRange === opt.id
-                    ? 'bg-[#4F46E5] text-white'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {dateRange === 'custom' && (
-            <div className="flex items-center gap-1.5 text-xs">
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
-              />
-              <span className="text-slate-400">to</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs"
-              />
-            </div>
-          )}
+        <div className="flex flex-wrap items-center gap-2.5 xl:justify-end">
+          <DateRangeFilter
+            value={dateRange}
+            customFrom={customFrom}
+            customTo={customTo}
+            onPresetChange={(preset) => setDateRange(preset)}
+            onCustomRangeChange={(from, to) => {
+              setCustomFrom(from);
+              setCustomTo(to);
+              setDateRange('custom');
+            }}
+          />
           {metricsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           <Link
             href="/ai-studio"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-[#EEF2FF] px-3.5 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-200 bg-[#EEF2FF] px-3.5 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span>Open AI Studio</span>
           </Link>
           <Link
             href="/applications"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#4F46E5] px-4 text-xs font-semibold text-white hover:bg-[#4338CA]"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#4F46E5] px-4 text-xs font-semibold text-white hover:bg-[#4338CA]"
           >
             <span>Kanban Pipeline</span>
             <ArrowRight className="h-3.5 w-3.5" />
