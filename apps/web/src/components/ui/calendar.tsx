@@ -19,7 +19,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         month: 'flex flex-col gap-3',
         month_caption: 'flex justify-center pt-1 relative items-center h-8',
         caption_label: 'text-[13px] font-semibold text-slate-900',
-        nav: 'flex items-center justify-between absolute inset-x-0 top-0 h-8 px-0.5',
+        nav: 'z-10 flex items-center justify-between absolute inset-x-0 top-0 h-8 px-0.5',
         button_previous: cn(
           buttonVariants({ variant: 'ghost', size: 'sm' }),
           'h-7 w-7 p-0 text-slate-400 hover:text-slate-700',
