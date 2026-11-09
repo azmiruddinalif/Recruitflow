@@ -30,6 +30,7 @@ export type PermissionCode =
   | 'ai.job_generate'
   | 'ai.interview_assist'
   | 'ai.email_assist'
+  | 'ai.candidate_summary'
   | 'analytics.read'
   | 'organization.read'
   | 'organization.manage'
@@ -86,6 +87,18 @@ export type HiringRecommendation =
   | 'NO_HIRE'
   | 'STRONG_NO_HIRE';
 
+export type NotificationType =
+  | 'ORGANIZATION_INVITE'
+  | 'APPLICATION_CREATED'
+  | 'APPLICATION_STAGE_CHANGED'
+  | 'INTERVIEW_SCHEDULED'
+  | 'INTERVIEW_REMINDER'
+  | 'INTERVIEW_CANCELED'
+  | 'FEEDBACK_SUBMITTED'
+  | 'RESUME_PARSED'
+  | 'SUBSCRIPTION_ALERT'
+  | 'SYSTEM';
+
 export type AIProviderType = 'OPENAI' | 'GEMINI' | 'ANTHROPIC';
 
 export type AIFeatureType =
@@ -93,7 +106,8 @@ export type AIFeatureType =
   | 'CANDIDATE_MATCH'
   | 'JOB_DESCRIPTION'
   | 'INTERVIEW_ASSISTANT'
-  | 'EMAIL_ASSISTANT';
+  | 'EMAIL_ASSISTANT'
+  | 'CANDIDATE_SUMMARY';
 
 export interface ApiSuccessResponse<T = unknown> {
   success: true;
@@ -233,6 +247,26 @@ export interface AIEmailDraftResult {
   body: string;
   tone: string;
   placeholders: string[];
+}
+
+export interface AICandidateSummaryResult {
+  summary: string;
+  keyStrengths: string[];
+  considerations: string[];
+  basedOnFields: string[];
+}
+
+export interface AIProviderStatus {
+  isConfigured: boolean;
+  activeProvider: AIProviderType | null;
+  activeModel: string | null;
+  availableProviders: Array<{
+    provider: AIProviderType;
+    displayName: string;
+    model: string;
+    isConfigured: boolean;
+    source: 'organization' | 'global' | 'env' | 'none';
+  }>;
 }
 
 export interface DashboardMetrics {

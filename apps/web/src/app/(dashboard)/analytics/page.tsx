@@ -1,44 +1,53 @@
 'use client';
 
 import React from 'react';
-import { BarChart3, Clock, Target, TrendingUp, Users } from 'lucide-react';
+import { BarChart3, Clock, Loader2, Target, TrendingUp, Users } from 'lucide-react';
 import { APPLICATION_PIPELINE_STAGES } from '@recruitflow/shared';
-import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { useDashboardMetrics, useDetailedReports } from '@/features/analytics/use-analytics';
+import { useApplicationsKanban } from '@/features/applications/use-applications';
 
 export default function AnalyticsPage() {
-  const { activeOrganization, candidates, jobs, applications, interviews } = useRecruitFlow();
+  const metricsQuery = useDashboardMetrics({ range: '1y' });
+  const reportsQuery = useDetailedReports();
+  const applicationsQuery = useApplicationsKanban({});
 
-  const orgCandidates = candidates.filter((c) => c.organizationId === activeOrganization.id);
-  const orgJobs = jobs.filter((j) => j.organizationId === activeOrganization.id);
-  const orgApps = applications.filter((a) => a.organizationId === activeOrganization.id);
-  const orgInterviews = interviews.filter((i) => i.organizationId === activeOrganization.id);
+  const metrics = metricsQuery.data;
+  const reports = reportsQuery.data;
+  const applications = applicationsQuery.data ?? [];
 
-  const hiredCount = orgApps.filter((a) => a.status === 'HIRED').length;
+  const evaluatedApps = applications.filter((a) => a.aiMatch !== null);
   const avgMatchScore =
-    orgApps.length > 0
-      ? Math.round(orgApps.reduce((acc, a) => acc + a.aiMatch.overallScore, 0) / orgApps.length)
-      : 84;
+    evaluatedApps.length > 0
+      ? Math.round(
+          evaluatedApps.reduce((acc, a) => acc + (a.aiMatch?.overallScore ?? 0), 0) /
+            evaluatedApps.length,
+        )
+      : null;
 
-  const sourceBreakdown = ['LINKEDIN', 'REFERRAL', 'DIRECT_APPLY', 'AI_RESUME_IMPORT', 'AGENCY'].map(
-    (source) => {
-      const count = orgApps.filter((a) => a.source === source).length;
-      return {
-        source,
-        count,
-        pct: orgApps.length > 0 ? Math.round((count / orgApps.length) * 100) : 0,
-      };
-    },
-  );
+  const scheduledOrCompletedInterviews =
+    reports?.interviewConversion.reduce((sum, i) => sum + i.count, 0) ?? 0;
+  const completedInterviews =
+    reports?.interviewConversion.find((i) => i.status === 'COMPLETED')?.count ?? 0;
+  const interviewToOfferPct =
+    scheduledOrCompletedInterviews > 0
+      ? Math.round((completedInterviews / scheduledOrCompletedInterviews) * 100)
+      : null;
+
+  const totalApplicationsAllTime = reports?.sourceEffectiveness.reduce((s, x) => s + x.applications, 0) ?? 0;
+  const isLoading = metricsQuery.isLoading || reportsQuery.isLoading;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
-          Recruitment Analytics & Conversion Reports
-        </h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Live database aggregations for pipeline conversion, time-to-hire, source effectiveness, and recruiter velocity.
-        </p>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
+            Recruitment Analytics & Conversion Reports
+          </h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Live database aggregations for pipeline conversion, time-to-hire, source effectiveness, and recruiter velocity.
+          </p>
+        </div>
+        {isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -47,37 +56,42 @@ export default function AnalyticsPage() {
             <span>Avg. Time to Hire</span>
             <Clock className="h-4 w-4 text-indigo-600" />
           </div>
-          <p className="text-2xl font-bold text-slate-900 mt-2">18.4 Days</p>
-          <p className="text-xs text-emerald-600 font-medium mt-1">-4.2 days vs last quarter</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">
+            {reports ? `${reports.averageTimeToHireDays} Days` : '—'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">From application to hire</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-            <span>Interview-to-Offer Conversion</span>
+            <span>Interview Completion Rate</span>
             <TrendingUp className="h-4 w-4 text-indigo-600" />
           </div>
           <p className="text-2xl font-bold text-slate-900 mt-2">
-            {orgInterviews.length > 0
-              ? Math.min(100, Math.round(((hiredCount + 2) / (orgInterviews.length + 2)) * 100))
-              : 42}
-            %
+            {interviewToOfferPct !== null ? `${interviewToOfferPct}%` : '—'}
           </p>
-          <p className="text-xs text-slate-500 mt-1">{orgInterviews.length} interviews tracked</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {scheduledOrCompletedInterviews} interviews tracked
+          </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Avg. AI Candidate Match</span>
             <Target className="h-4 w-4 text-indigo-600" />
           </div>
-          <p className="text-2xl font-bold text-slate-900 mt-2">{avgMatchScore}%</p>
-          <p className="text-xs text-slate-500 mt-1">Across {orgApps.length} active applications</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">
+            {avgMatchScore !== null ? `${avgMatchScore}%` : '—'}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            Across {evaluatedApps.length} AI-evaluated of {applications.length} applications
+          </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Total Talent Pool</span>
             <Users className="h-4 w-4 text-indigo-600" />
           </div>
-          <p className="text-2xl font-bold text-slate-900 mt-2">{orgCandidates.length}</p>
-          <p className="text-xs text-slate-500 mt-1">{orgJobs.length} total job requisitions</p>
+          <p className="text-2xl font-bold text-slate-900 mt-2">{metrics?.totalCandidates ?? 0}</p>
+          <p className="text-xs text-slate-500 mt-1">{metrics?.activeJobs ?? 0} active job requisitions</p>
         </div>
       </div>
 
@@ -90,8 +104,9 @@ export default function AnalyticsPage() {
           </h2>
           <div className="space-y-3">
             {APPLICATION_PIPELINE_STAGES.map((stage) => {
-              const count = orgApps.filter((a) => a.status === stage.status).length;
-              const pct = orgApps.length > 0 ? Math.round((count / orgApps.length) * 100) : 0;
+              const found = metrics?.funnel.find((f) => f.status === stage.status);
+              const count = found?.count ?? 0;
+              const pct = found?.percentage ?? 0;
               return (
                 <div key={stage.status} className="space-y-1">
                   <div className="flex justify-between text-xs font-medium text-slate-700">
@@ -127,13 +142,27 @@ export default function AnalyticsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sourceBreakdown.map((item) => (
+                {(reports?.sourceEffectiveness ?? []).map((item) => (
                   <tr key={item.source}>
-                    <td className="py-2.5 font-medium text-slate-900">{item.source}</td>
-                    <td className="py-2.5 text-slate-700">{item.count}</td>
-                    <td className="py-2.5 text-indigo-600 font-semibold">{item.pct}%</td>
+                    <td className="py-2.5 font-medium text-slate-900">
+                      {item.source.replace(/_/g, ' ')}
+                    </td>
+                    <td className="py-2.5 text-slate-700">{item.applications}</td>
+                    <td className="py-2.5 text-indigo-600 font-semibold">
+                      {totalApplicationsAllTime > 0
+                        ? Math.round((item.applications / totalApplicationsAllTime) * 100)
+                        : 0}
+                      %
+                    </td>
                   </tr>
                 ))}
+                {(reports?.sourceEffectiveness ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="py-6 text-center text-slate-400">
+                      No applications recorded yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

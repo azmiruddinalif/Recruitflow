@@ -25,16 +25,6 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 // relying on it in production is not an option once the API lives elsewhere.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
-function getStoredOrgId(): string {
-  if (typeof window === 'undefined') return 'org_acme_cloud';
-  return window.localStorage.getItem('rf_active_org_id') || 'org_acme_cloud';
-}
-
-function getStoredAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem('rf_auth_token');
-}
-
 export async function apiRequest<T>(
   endpoint: string,
   options: RequestOptions = {},
@@ -60,14 +50,12 @@ export async function apiRequest<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  const orgId = organizationId || getStoredOrgId();
-  if (orgId) {
-    headers.set('X-Organization-Id', orgId);
-  }
-
-  const token = getStoredAuthToken();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
+  // The backend's OrganizationGuard already resolves the active organization from
+  // the Better Auth session cookie (updated via POST /organizations/switch), so no
+  // client-side header is required for correct tenant scoping. This is only an
+  // explicit override for callers that need to target a non-default org.
+  if (organizationId) {
+    headers.set('X-Organization-Id', organizationId);
   }
 
   const response = await fetch(url, {

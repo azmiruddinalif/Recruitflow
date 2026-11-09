@@ -30,26 +30,33 @@ import { CSS } from '@dnd-kit/utilities';
 import { ChevronRight, GripVertical } from 'lucide-react';
 import type { ApplicationStatus } from '@recruitflow/types';
 import { APPLICATION_PIPELINE_STAGES } from '@recruitflow/shared';
-import type {
-  ApplicationRecord,
-  CandidateRecord,
-  JobRecord,
-} from '@/stores/recruitflow-store';
+import type { KanbanApplication } from '@/features/applications/use-applications';
 import { AIMatchBadge } from '@/components/shared/ai-match-badge';
 import { formatDate, getApplicationStageStyle, getInitials } from '@/lib/utils';
+
+export interface CandidateLite {
+  id: string;
+  fullName: string;
+  currentTitle?: string | null;
+}
+
+export interface JobLite {
+  id: string;
+  title: string;
+}
 
 type ReorderUpdate = { applicationId: string; status: ApplicationStatus; stageOrder: number };
 
 interface KanbanBoardProps {
-  applications: ApplicationRecord[];
-  candidates: CandidateRecord[];
-  jobs: JobRecord[];
-  onInspectMatch: (app: ApplicationRecord) => void;
+  applications: KanbanApplication[];
+  candidates: CandidateLite[];
+  jobs: JobLite[];
+  onInspectMatch: (app: KanbanApplication) => void;
   onReorder: (updates: ReorderUpdate[]) => Promise<void>;
   onMoveStage: (applicationId: string, nextStatus: ApplicationStatus) => Promise<void>;
 }
 
-function sortByStage(apps: ApplicationRecord[], status: ApplicationStatus) {
+function sortByStage(apps: KanbanApplication[], status: ApplicationStatus) {
   return apps
     .filter((a) => a.status === status)
     .slice()
@@ -86,7 +93,7 @@ function KanbanCard({
   dragListeners,
   isDragging,
 }: {
-  app: ApplicationRecord;
+  app: KanbanApplication;
   candidateName: string;
   candidateTitle?: string;
   jobTitle?: string;
@@ -130,7 +137,7 @@ function KanbanCard({
         </div>
 
         <div className="shrink-0" onPointerDown={(e) => e.stopPropagation()}>
-          <AIMatchBadge score={app.aiMatch.overallScore} onClick={onInspectMatch} />
+          <AIMatchBadge score={app.aiMatch?.overallScore ?? null} onClick={onInspectMatch} />
         </div>
       </div>
 
@@ -144,7 +151,7 @@ function KanbanCard({
       </div>
 
       <div className="mt-2.5 flex flex-wrap gap-1">
-        {app.aiMatch.matchingSkills.slice(0, 3).map((sk) => (
+        {(app.aiMatch?.matchingSkills ?? []).slice(0, 3).map((sk) => (
           <span
             key={sk}
             className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
@@ -189,7 +196,7 @@ function KanbanCard({
 }
 
 function SortableKanbanCard(props: {
-  app: ApplicationRecord;
+  app: KanbanApplication;
   candidateName: string;
   candidateTitle?: string;
   jobTitle?: string;
@@ -224,10 +231,10 @@ function KanbanColumn({
 }: {
   status: ApplicationStatus;
   label: string;
-  apps: ApplicationRecord[];
-  candidates: CandidateRecord[];
-  jobs: JobRecord[];
-  onInspectMatch: (app: ApplicationRecord) => void;
+  apps: KanbanApplication[];
+  candidates: CandidateLite[];
+  jobs: JobLite[];
+  onInspectMatch: (app: KanbanApplication) => void;
   onMoveStage: (applicationId: string, nextStatus: ApplicationStatus) => Promise<void>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
@@ -268,7 +275,7 @@ function KanbanColumn({
                   key={app.id}
                   app={app}
                   candidateName={candidate?.fullName ?? 'Candidate'}
-                  candidateTitle={candidate?.currentTitle}
+                  candidateTitle={candidate?.currentTitle ?? undefined}
                   jobTitle={job?.title}
                   onInspectMatch={() => onInspectMatch(app)}
                   onChangeStatus={(nextStatus) => {
@@ -551,7 +558,9 @@ export function KanbanBoard({
               candidateName={
                 candidates.find((c) => c.id === activeApp.candidateId)?.fullName ?? 'Candidate'
               }
-              candidateTitle={candidates.find((c) => c.id === activeApp.candidateId)?.currentTitle}
+              candidateTitle={
+                candidates.find((c) => c.id === activeApp.candidateId)?.currentTitle ?? undefined
+              }
               jobTitle={jobs.find((j) => j.id === activeApp.jobId)?.title}
               onInspectMatch={() => {}}
             />

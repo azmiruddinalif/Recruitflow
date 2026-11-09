@@ -50,56 +50,44 @@ const FEATURES = [
   },
 ];
 
-const PRICING_PLANS = [
-  {
-    name: 'Starter',
-    price: '$79',
-    period: '/month',
-    subtitle: 'For boutique hiring teams & early-stage startups',
-    features: [
-      'Up to 5 Active Job Requisitions',
-      '500 Candidate Profiles',
-      '3 Workspace Team Members',
-      '100 AI Resume Parses & Match Credits / mo',
-      'Standard Kanban & Table Pipeline',
-    ],
-    cta: 'Start with Starter',
-    highlighted: false,
-  },
-  {
-    name: 'Growth',
-    price: '$249',
-    period: '/month',
-    subtitle: 'For scaling recruitment agencies & mid-market orgs',
-    features: [
-      'Up to 25 Active Job Requisitions',
-      '10,000 Candidate Profiles',
-      '15 Workspace Team Members',
-      '1,000 AI Resume Parses & Match Credits / mo',
-      'AI Interview Assistant & Email Copilot',
-      'Full Funnel & Velocity Analytics',
-    ],
-    cta: 'Launch Growth Workspace',
-    highlighted: true,
-  },
-  {
-    name: 'Enterprise',
-    price: '$699',
-    period: '/month',
-    subtitle: 'For high-volume talent organizations & self-hosted buyers',
-    features: [
-      'Unlimited Active Job Requisitions',
-      'Unlimited Candidate Profiles & Team Seats',
-      'Unlimited Multi-Provider AI (OpenAI, Gemini, Claude)',
-      'Custom RBAC, Audit Logs & Self-Hosted License Mode',
-      'Dedicated SLA & Priority Support',
-    ],
-    cta: 'Explore Enterprise',
-    highlighted: false,
-  },
-];
+interface PublicPlan {
+  code: string;
+  name: string;
+  description: string;
+  priceMonthlyCents: number;
+  maxJobs: number;
+  maxCandidates: number;
+  maxMembers: number;
+  aiCreditsMonthly: number;
+  features: string[];
+  sortOrder: number;
+}
 
-export default function MarketingLandingPage() {
+// Server-rendered: fetched from the real, admin-editable SubscriptionPlan
+// table (Super Admin Console -> Plan Management) rather than hardcoded copy,
+// so the public pricing section can never drift from what Billing actually
+// charges.
+async function getPublicPlans(): Promise<PublicPlan[]> {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+  try {
+    const res = await fetch(`${apiBase.replace(/\/$/, '')}/subscriptions/plans`, {
+      next: { revalidate: 60 },
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { data?: PublicPlan[] };
+    return (json.data ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  } catch {
+    return [];
+  }
+}
+
+function formatPlanPrice(cents: number): string {
+  return cents === 0 ? '$0' : `$${Math.round(cents / 100)}`;
+}
+
+export default async function MarketingLandingPage() {
+  const plans = await getPublicPlans();
+  const highlightIndex = Math.floor(plans.length / 2);
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A]">
       {/* Top Navigation */}
@@ -350,54 +338,61 @@ export default function MarketingLandingPage() {
           </h2>
         </div>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-3">
-          {PRICING_PLANS.map((plan) => (
-            <div
-              key={plan.name}
-              className={`flex flex-col justify-between rounded-xl border bg-white p-6 ${
-                plan.highlighted
-                  ? 'border-[#4F46E5] ring-1 ring-[#4F46E5]'
-                  : 'border-[#E2E8F0]'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
-                  {plan.highlighted && (
-                    <span className="rounded-md bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-semibold text-[#4F46E5]">
-                      Most Popular
-                    </span>
-                  )}
+        {plans.length === 0 ? (
+          <p className="mt-10 text-center text-sm text-slate-500">
+            Pricing plans are not configured yet. Check back soon.
+          </p>
+        ) : (
+          <div className="mt-10 grid gap-6 lg:grid-cols-3">
+            {plans.map((plan, index) => {
+              const highlighted = index === highlightIndex;
+              return (
+                <div
+                  key={plan.code}
+                  className={`flex flex-col justify-between rounded-xl border bg-white p-6 ${
+                    highlighted ? 'border-[#4F46E5] ring-1 ring-[#4F46E5]' : 'border-[#E2E8F0]'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
+                      {highlighted && (
+                        <span className="rounded-md bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-semibold text-[#4F46E5]">
+                          Most Popular
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{plan.description}</p>
+                    <div className="mt-4 flex items-baseline gap-1">
+                      <span className="text-3xl font-semibold text-slate-900">
+                        {formatPlanPrice(plan.priceMonthlyCents)}
+                      </span>
+                      <span className="text-xs text-slate-500">/month</span>
+                    </div>
+                    <ul className="mt-6 space-y-2.5 text-xs text-slate-700">
+                      {plan.features.map((f) => (
+                        <li key={f} className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-[#4F46E5] shrink-0" />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <Link
+                    href="/billing"
+                    className={`mt-8 inline-flex h-10 w-full items-center justify-center rounded-lg text-xs font-semibold transition-colors ${
+                      highlighted
+                        ? 'bg-[#4F46E5] text-white hover:bg-[#4338CA]'
+                        : 'border border-[#E2E8F0] bg-[#F8FAFC] text-slate-800 hover:bg-slate-100'
+                    }`}
+                  >
+                    Get Started with {plan.name}
+                  </Link>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{plan.subtitle}</p>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-3xl font-semibold text-slate-900">
-                    {plan.price}
-                  </span>
-                  <span className="text-xs text-slate-500">{plan.period}</span>
-                </div>
-                <ul className="mt-6 space-y-2.5 text-xs text-slate-700">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-[#4F46E5] shrink-0" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Link
-                href="/billing"
-                className={`mt-8 inline-flex h-10 w-full items-center justify-center rounded-lg text-xs font-semibold transition-colors ${
-                  plan.highlighted
-                    ? 'bg-[#4F46E5] text-white hover:bg-[#4338CA]'
-                    : 'border border-[#E2E8F0] bg-[#F8FAFC] text-slate-800 hover:bg-slate-100'
-                }`}
-              >
-                {plan.cta}
-              </Link>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Footer */}

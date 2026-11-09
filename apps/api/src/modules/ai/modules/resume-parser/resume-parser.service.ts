@@ -3,12 +3,14 @@ import { aiParsedResumeSchema } from '@recruitflow/validation';
 import type { ParsedResumeData } from '@recruitflow/types';
 import { PrismaService } from '../../../../database/prisma.service';
 import { AIFactory } from '../../ai.factory';
+import { ResumeParseQueueService } from '../../queues/resume-parse-queue.service';
 
 @Injectable()
 export class ResumeParserService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiFactory: AIFactory,
+    private readonly resumeParseQueue: ResumeParseQueueService,
   ) {}
 
   async parseResumeText(params: {
@@ -48,6 +50,20 @@ export class ResumeParserService {
       },
     });
 
+    const queued = await this.resumeParseQueue.enqueueResumeParse({
+      organizationId: params.organizationId,
+      resumeId: resumeRecord.id,
+      userId: params.userId,
+    });
+
+    if (queued) {
+      return {
+        resumeId: resumeRecord.id,
+        parseStatus: 'PROCESSING' as const,
+        queued: true,
+      };
+    }
+
     try {
       const aiResult = await this.aiFactory.generateStructured<ParsedResumeData>(
         {
@@ -81,6 +97,7 @@ export class ResumeParserService {
         extractedData: aiResult.data,
         provider: aiResult.provider,
         model: aiResult.model,
+        queued: false,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Resume parsing failed';
@@ -93,6 +110,25 @@ export class ResumeParserService {
       });
       throw error;
     }
+  }
+
+  async getResumeStatus(organizationId: string, resumeId: string) {
+    const resume = await this.prisma.candidateResume.findFirst({
+      where: { id: resumeId, organizationId },
+    });
+
+    if (!resume) {
+      throw new NotFoundException('Resume record not found in this organization.');
+    }
+
+    return {
+      resumeId: resume.id,
+      parseStatus: resume.parseStatus,
+      extractedData: resume.parsedDataJson as ParsedResumeData | null,
+      provider: resume.aiProviderUsed,
+      model: resume.aiModelUsed,
+      parseError: resume.parseError,
+    };
   }
 
   async approveParsedResume(params: {

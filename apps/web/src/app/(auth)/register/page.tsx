@@ -3,31 +3,40 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight } from 'lucide-react';
+import { AlertTriangle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { useRegister } from '@/features/auth/use-session';
+import { ApiClientError } from '@/lib/api-client';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { pushToast, updateOrganizationSettings } = useRecruitFlow();
+  const register = useRegister();
 
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [organizationName, setOrganizationName] = React.useState('');
   const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (organizationName.trim()) {
-      await updateOrganizationSettings({ name: organizationName.trim() });
+    setError(null);
+    try {
+      await register.mutateAsync({
+        name,
+        email,
+        password,
+        organizationName: organizationName.trim() || undefined,
+      });
+      router.push('/dashboard');
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Unable to create your workspace. Please try again.',
+      );
     }
-    pushToast(
-      'Workspace provisioned',
-      `Welcome ${name || 'Admin'}! Your multi-tenant organization is ready.`,
-      'success',
-    );
-    router.push('/dashboard');
   };
 
   return (
@@ -52,6 +61,12 @@ export default function RegisterPage() {
 
         <div className="mt-6 rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-2xs">
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
             <Input
               label="Full Name"
               required
@@ -83,8 +98,8 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
             />
-            <Button type="submit" className="w-full" size="lg">
-              <span>Provision Workspace</span>
+            <Button type="submit" className="w-full" size="lg" disabled={register.isPending}>
+              <span>{register.isPending ? 'Provisioning...' : 'Provision Workspace'}</span>
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>

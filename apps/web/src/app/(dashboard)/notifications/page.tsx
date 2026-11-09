@@ -1,27 +1,32 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bell, CheckCheck, Trash2 } from 'lucide-react';
+import { Bell, CheckCheck, Loader2, Trash2 } from 'lucide-react';
+import {
+  useDeleteNotification,
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotifications,
+} from '@/features/notifications/use-notifications';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { formatDate } from '@/lib/utils';
 
 export default function NotificationsPage() {
-  const {
-    activeOrganization,
-    notifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    deleteNotification,
-  } = useRecruitFlow();
-
+  const { activeOrganization } = useRecruitFlow();
   const [filter, setFilter] = useState<'ALL' | 'UNREAD' | 'READ'>('ALL');
 
-  const orgNotifications = notifications
-    .filter((n) => n.organizationId === activeOrganization.id)
-    .filter((n) => {
-      if (filter === 'UNREAD') return !n.isRead;
-      if (filter === 'READ') return n.isRead;
-      return true;
-    });
+  const notificationsQuery = useNotifications();
+  const allNotifications = notificationsQuery.data?.notifications ?? [];
+
+  const markRead = useMarkNotificationRead();
+  const markAllRead = useMarkAllNotificationsRead();
+  const deleteNotification = useDeleteNotification();
+
+  const filtered = allNotifications.filter((n) => {
+    if (filter === 'UNREAD') return !n.isRead;
+    if (filter === 'READ') return n.isRead;
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -31,7 +36,7 @@ export default function NotificationsPage() {
             Notifications Center
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Real-time alerts for candidate applications, interview schedules, scorecards, and AI parsing jobs.
+            Alerts for candidate applications, interview schedules, scorecards, and AI parsing jobs.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -53,8 +58,9 @@ export default function NotificationsPage() {
           </div>
           <button
             type="button"
-            onClick={markAllNotificationsRead}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => markAllRead.mutate()}
+            disabled={markAllRead.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             <CheckCheck className="h-4 w-4 text-indigo-600" />
             Mark All as Read
@@ -63,7 +69,12 @@ export default function NotificationsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
-        {orgNotifications.length === 0 ? (
+        {notificationsQuery.isLoading && (
+          <div className="flex items-center justify-center p-10">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        )}
+        {!notificationsQuery.isLoading && filtered.length === 0 ? (
           <div className="p-10 text-center">
             <Bell className="mx-auto h-8 w-8 text-slate-300" />
             <p className="mt-2 text-sm font-medium text-slate-700">No notifications found</p>
@@ -72,7 +83,7 @@ export default function NotificationsPage() {
             </p>
           </div>
         ) : (
-          orgNotifications.map((n) => (
+          filtered.map((n) => (
             <div
               key={n.id}
               className={`p-4 flex items-start justify-between gap-4 ${
@@ -93,14 +104,14 @@ export default function NotificationsPage() {
                     )}
                   </div>
                   <p className="text-xs text-slate-600 mt-0.5">{n.message}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{n.createdAt}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{formatDate(n.createdAt)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {!n.isRead && (
                   <button
                     type="button"
-                    onClick={() => markNotificationRead(n.id)}
+                    onClick={() => markRead.mutate(n.id)}
                     className="text-xs font-medium text-indigo-600 hover:underline"
                   >
                     Mark Read
@@ -108,7 +119,7 @@ export default function NotificationsPage() {
                 )}
                 <button
                   type="button"
-                  onClick={() => deleteNotification(n.id)}
+                  onClick={() => deleteNotification.mutate(n.id)}
                   title="Delete notification"
                   className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
                 >

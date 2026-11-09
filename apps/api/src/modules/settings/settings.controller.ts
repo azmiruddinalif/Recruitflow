@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Put, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type {
   AIProviderType,
   AuthenticatedOrganizationContext,
   AuthenticatedUser,
 } from '@recruitflow/types';
+import { upsertAIProviderSchema } from '@recruitflow/validation';
 import { CurrentOrg } from '../../common/decorators/current-org.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -49,5 +50,32 @@ export class SettingsController {
     },
   ) {
     return this.settingsService.updateOrganizationSettings(org.organizationId, user.id, body);
+  }
+
+  @Get('ai-providers')
+  @RequirePermissions('organization.manage')
+  @ApiOperation({ summary: 'List this organization\'s configured AI provider keys (masked)' })
+  async listOrganizationAIProviders(@CurrentOrg() org: AuthenticatedOrganizationContext) {
+    return this.settingsService.listOrganizationAIProviders(org.organizationId);
+  }
+
+  @Put('ai-providers')
+  @RequirePermissions('organization.manage')
+  @ApiOperation({ summary: 'Configure this organization\'s own AI provider API key' })
+  async upsertOrganizationAIProvider(
+    @CurrentOrg() org: AuthenticatedOrganizationContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body()
+    body: {
+      provider: AIProviderType;
+      displayName: string;
+      apiKey?: string;
+      defaultModel: string;
+      isEnabled: boolean;
+      isDefault?: boolean;
+    },
+  ) {
+    const validated = upsertAIProviderSchema.parse(body);
+    return this.settingsService.upsertOrganizationAIProvider(org.organizationId, user.id, validated);
   }
 }

@@ -1,16 +1,18 @@
 'use client';
 
 import * as React from 'react';
-import {
-  Briefcase,
-  MapPin,
-  Plus,
-  Search,
-  Sparkles,
-  Users,
-} from 'lucide-react';
+import { Briefcase, Loader2, MapPin, Plus, Search, Sparkles, Users } from 'lucide-react';
 import type { ExperienceLevel, JobStatus, WorkLocationType } from '@recruitflow/types';
-import { useRecruitFlow, type JobRecord } from '@/stores/recruitflow-store';
+import {
+  useCreateJob,
+  useJobDetail,
+  useJobsList,
+  useUpdateJobStatus,
+  type JobListItem,
+} from '@/features/jobs/use-jobs';
+import { useGenerateJobDescription } from '@/features/ai/use-ai';
+import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { ApiClientError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -18,116 +20,124 @@ import { Modal } from '@/components/ui/modal';
 import { formatSalaryRange, getJobStatusStyle } from '@/lib/utils';
 
 export default function JobsPage() {
-  const {
-    activeOrganization,
-    jobs,
-    applications,
-    createJob,
-    updateJobStatus,
-    currentUser,
-    pushToast,
-  } = useRecruitFlow();
+  const { pushToast } = useRecruitFlow();
 
   const [search, setSearch] = React.useState('');
+  const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<'ALL' | JobStatus>('ALL');
   const [showCreateModal, setShowCreateModal] = React.useState(false);
-  const [selectedJob, setSelectedJob] = React.useState<JobRecord | null>(null);
-  const [generatingAI, setGeneratingAI] = React.useState(false);
+  const [selectedJobId, setSelectedJobId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const jobsQuery = useJobsList({
+    search: debouncedSearch,
+    status: statusFilter !== 'ALL' ? statusFilter : undefined,
+  });
+  const jobs = jobsQuery.data?.data ?? [];
+
+  const jobDetailQuery = useJobDetail(selectedJobId);
+  const selectedJob = jobDetailQuery.data;
+
+  const createJob = useCreateJob();
+  const updateStatus = useUpdateJobStatus();
+  const generateDescription = useGenerateJobDescription();
 
   // Create Job Form State
-  const [title, setTitle] = React.useState('Senior Staff Platform Engineer');
-  const [department, setDepartment] = React.useState('Cloud Platform Engineering');
-  const [location, setLocation] = React.useState('San Francisco, CA / Hybrid');
-  const [workLocationType, setWorkLocationType] =
-    React.useState<WorkLocationType>('HYBRID');
-  const [experienceLevel, setExperienceLevel] =
-    React.useState<ExperienceLevel>('SENIOR');
-  const [minExperienceYears, setMinExperienceYears] = React.useState(6);
-  const [salaryMin, setSalaryMin] = React.useState(185000);
-  const [salaryMax, setSalaryMax] = React.useState(220000);
-  const [requiredSkillsText, setRequiredSkillsText] = React.useState(
-    'TypeScript, Kubernetes, PostgreSQL, AWS, Go',
-  );
-  const [preferredSkillsText, setPreferredSkillsText] = React.useState(
-    'Terraform, Redis, Observability',
-  );
-  const [description, setDescription] = React.useState(
-    'Design, scale, and operate resilient distributed cloud platform services powering enterprise AI workloads.',
-  );
-  const [openingsCount, setOpeningsCount] = React.useState(2);
+  const [title, setTitle] = React.useState('');
+  const [department, setDepartment] = React.useState('');
+  const [location, setLocation] = React.useState('');
+  const [workLocationType, setWorkLocationType] = React.useState<WorkLocationType>('HYBRID');
+  const [experienceLevel, setExperienceLevel] = React.useState<ExperienceLevel>('SENIOR');
+  const [minExperienceYears, setMinExperienceYears] = React.useState(5);
+  const [salaryMin, setSalaryMin] = React.useState<number | ''>('');
+  const [salaryMax, setSalaryMax] = React.useState<number | ''>('');
+  const [requiredSkillsText, setRequiredSkillsText] = React.useState('');
+  const [preferredSkillsText, setPreferredSkillsText] = React.useState('');
+  const [description, setDescription] = React.useState('');
+  const [openingsCount, setOpeningsCount] = React.useState(1);
 
-  const orgJobs = React.useMemo(() => {
-    return jobs
-      .filter((j) => j.organizationId === activeOrganization.id)
-      .filter((j) => {
-        if (statusFilter !== 'ALL' && j.status !== statusFilter) return false;
-        if (!search.trim()) return true;
-        const q = search.toLowerCase();
-        return (
-          j.title.toLowerCase().includes(q) ||
-          j.department.toLowerCase().includes(q) ||
-          j.requiredSkills.some((s) => s.toLowerCase().includes(q))
-        );
+  const handleAIGenerateDescription = async () => {
+    if (!title.trim() || !department.trim()) {
+      pushToast('Add a title and department first', 'The AI generator needs both to write a description.', 'error');
+      return;
+    }
+    try {
+      const result = await generateDescription.mutateAsync({
+        title,
+        department,
+        experienceLevel,
+        requiredSkills: requiredSkillsText.split(',').map((s) => s.trim()).filter(Boolean),
+        preferredSkills: preferredSkillsText.split(',').map((s) => s.trim()).filter(Boolean),
       });
-  }, [jobs, activeOrganization.id, statusFilter, search]);
-
-  const handleAIGenerateDescription = () => {
-    setGeneratingAI(true);
-    setTimeout(() => {
-      setDescription(
-        `We are hiring a ${title} within our ${department} group (${location}). You will architect high-availability services using ${requiredSkillsText}, lead technical RFCs, and mentor engineers across our multi-tenant cloud infrastructure.`,
-      );
-      setGeneratingAI(false);
+      setDescription(result.description);
+      pushToast('AI description generated', `Drafted for ${title}.`, 'success');
+    } catch (error) {
       pushToast(
-        'AI Job Description Generated',
-        `Structured description and requirements synthesized for ${title}.`,
-        'info',
+        'AI generation failed',
+        error instanceof ApiClientError ? error.message : 'Unknown error',
+        'error',
       );
-    }, 350);
+    }
   };
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    const reqSkills = requiredSkillsText
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const prefSkills = preferredSkillsText
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const reqSkills = requiredSkillsText.split(',').map((s) => s.trim()).filter(Boolean);
+    const prefSkills = preferredSkillsText.split(',').map((s) => s.trim()).filter(Boolean);
 
-    await createJob({
-      title,
-      department,
-      location,
-      workLocationType,
-      employmentType: 'FULL_TIME',
-      experienceLevel,
-      minExperienceYears: Number(minExperienceYears) || 5,
-      salaryMin: Number(salaryMin) || 170000,
-      salaryMax: Number(salaryMax) || 210000,
-      salaryCurrency: 'USD',
-      showSalary: true,
-      description,
-      responsibilities: [
-        `Architect and maintain core systems for ${title}.`,
-        `Collaborate with cross-functional engineering and product leaders.`,
-      ],
-      qualifications: [
-        `${minExperienceYears}+ years of production experience with ${reqSkills.join(', ')}.`,
-      ],
-      benefits: ['Competitive salary + equity', 'Comprehensive health coverage'],
-      requiredSkills: reqSkills,
-      preferredSkills: prefSkills,
-      openingsCount: Number(openingsCount) || 1,
-      status: 'PUBLISHED',
-      hiringManagerName: currentUser.name,
-      aiGenerated: true,
-    });
-
-    setShowCreateModal(false);
+    try {
+      await createJob.mutateAsync({
+        title,
+        department,
+        location,
+        workLocationType,
+        employmentType: 'FULL_TIME',
+        experienceLevel,
+        minExperienceYears: Number(minExperienceYears) || 0,
+        salaryMin: salaryMin === '' ? undefined : Number(salaryMin),
+        salaryMax: salaryMax === '' ? undefined : Number(salaryMax),
+        salaryCurrency: 'USD',
+        showSalary: salaryMin !== '' && salaryMax !== '',
+        description,
+        responsibilities: [],
+        qualifications: [],
+        benefits: [],
+        requiredSkills: reqSkills,
+        preferredSkills: prefSkills,
+        openingsCount: Number(openingsCount) || 1,
+        status: 'PUBLISHED',
+      });
+      pushToast('Job requisition created', `${title} is now live.`, 'success');
+      setShowCreateModal(false);
+      setTitle('');
+      setDepartment('');
+    } catch (error) {
+      pushToast(
+        'Could not create job',
+        error instanceof ApiClientError ? error.message : 'Unknown error',
+        'error',
+      );
+    }
   };
+
+  const handleUpdateStatus = async (jobId: string, status: JobStatus) => {
+    try {
+      await updateStatus.mutateAsync({ jobId, status });
+    } catch (error) {
+      pushToast(
+        'Could not update status',
+        error instanceof ApiClientError ? error.message : 'Unknown error',
+        'error',
+      );
+    }
+  };
+
+  const requiredSkills = (job: JobListItem) => job.skills.filter((s) => s.isRequired);
+  const preferredSkills = (job: JobListItem) => job.skills.filter((s) => !s.isRequired);
 
   return (
     <div className="space-y-6">
@@ -156,35 +166,38 @@ export default function JobsPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search job title, department, or required skill..."
+            placeholder="Search job title, department, or location..."
             className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#4F46E5] focus:bg-white focus:outline-none"
           />
         </div>
 
         <div className="flex items-center gap-2">
-          {(['ALL', 'PUBLISHED', 'DRAFT', 'PAUSED', 'CLOSED'] as const).map(
-            (st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setStatusFilter(st)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  statusFilter === st
-                    ? 'bg-[#4F46E5] text-white'
-                    : 'border border-[#E2E8F0] bg-[#F8FAFC] text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {st === 'ALL' ? 'All Requisitions' : st}
-              </button>
-            ),
-          )}
+          {(['ALL', 'PUBLISHED', 'DRAFT', 'PAUSED', 'CLOSED'] as const).map((st) => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => setStatusFilter(st)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                statusFilter === st
+                  ? 'bg-[#4F46E5] text-white'
+                  : 'border border-[#E2E8F0] bg-[#F8FAFC] text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {st === 'ALL' ? 'All Requisitions' : st}
+            </button>
+          ))}
+          {jobsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
         </div>
       </div>
 
       {/* Jobs Grid */}
       <div className="grid gap-4 md:grid-cols-2">
-        {orgJobs.map((job) => {
-          const jobApps = applications.filter((a) => a.jobId === job.id);
+        {jobs.length === 0 && !jobsQuery.isLoading && (
+          <p className="col-span-2 py-8 text-center text-xs text-slate-500">
+            No job requisitions match this filter.
+          </p>
+        )}
+        {jobs.map((job) => {
           const statusStyle = getJobStatusStyle(job.status);
 
           return (
@@ -201,16 +214,8 @@ export default function JobsPage() {
                       >
                         {statusStyle.label}
                       </span>
-                      {job.aiGenerated && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-[#EEF2FF] px-2 py-0.5 text-[11px] font-medium text-[#4F46E5]">
-                          <Sparkles className="h-3 w-3" />
-                          AI Crafted
-                        </span>
-                      )}
                     </div>
-                    <h3 className="mt-2 text-base font-semibold text-slate-900">
-                      {job.title}
-                    </h3>
+                    <h3 className="mt-2 text-base font-semibold text-slate-900">{job.title}</h3>
                     <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                       <span className="inline-flex items-center gap-1">
                         <Briefcase className="h-3.5 w-3.5" />
@@ -225,7 +230,7 @@ export default function JobsPage() {
 
                   <div className="text-right">
                     <p className="font-mono text-xs font-semibold text-slate-900">
-                      {formatSalaryRange(job.salaryMin, job.salaryMax, job.salaryCurrency)}
+                      {formatSalaryRange(job.salaryMin ?? undefined, job.salaryMax ?? undefined, job.salaryCurrency)}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-500">
                       {job.minExperienceYears}+ yrs · {job.openingsCount}{' '}
@@ -234,18 +239,14 @@ export default function JobsPage() {
                   </div>
                 </div>
 
-                <p className="mt-3 line-clamp-2 text-xs text-slate-600 leading-relaxed">
-                  {job.description}
-                </p>
-
                 {/* Required Skills */}
                 <div className="mt-3.5 flex flex-wrap gap-1.5">
-                  {job.requiredSkills.map((skill) => (
+                  {requiredSkills(job).map((skill) => (
                     <span
-                      key={skill}
+                      key={skill.name}
                       className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-medium text-slate-700"
                     >
-                      {skill}
+                      {skill.name}
                     </span>
                   ))}
                 </div>
@@ -255,19 +256,15 @@ export default function JobsPage() {
                 <div className="flex items-center gap-2 text-slate-600">
                   <Users className="h-4 w-4 text-[#4F46E5]" />
                   <span className="font-semibold text-slate-900">
-                    {jobApps.length} Applicants
+                    {job._count?.applications ?? 0} Applicants
                   </span>
-                  <span className="text-slate-400">·</span>
-                  <span>HM: {job.hiringManagerName}</span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <select
                     aria-label="Job Status"
                     value={job.status}
-                    onChange={(e) =>
-                      updateJobStatus(job.id, e.target.value as JobStatus)
-                    }
+                    onChange={(e) => handleUpdateStatus(job.id, e.target.value as JobStatus)}
                     className="h-8 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-2 text-xs font-medium text-slate-700"
                   >
                     <option value="PUBLISHED">Published</option>
@@ -275,11 +272,7 @@ export default function JobsPage() {
                     <option value="PAUSED">Paused</option>
                     <option value="CLOSED">Closed</option>
                   </select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setSelectedJob(job)}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => setSelectedJobId(job.id)}>
                     Details
                   </Button>
                 </div>
@@ -299,33 +292,16 @@ export default function JobsPage() {
       >
         <form onSubmit={handleCreateJob} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Job Title"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-            <Input
-              label="Department"
-              required
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-            />
+            <Input label="Job Title" required value={title} onChange={(e) => setTitle(e.target.value)} />
+            <Input label="Department" required value={department} onChange={(e) => setDepartment(e.target.value)} />
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <Input
-              label="Location"
-              required
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
+            <Input label="Location" required value={location} onChange={(e) => setLocation(e.target.value)} />
             <Select
               label="Work Arrangement"
               value={workLocationType}
-              onChange={(e) =>
-                setWorkLocationType(e.target.value as WorkLocationType)
-              }
+              onChange={(e) => setWorkLocationType(e.target.value as WorkLocationType)}
               options={[
                 { label: 'Hybrid', value: 'HYBRID' },
                 { label: 'Remote', value: 'REMOTE' },
@@ -335,9 +311,7 @@ export default function JobsPage() {
             <Select
               label="Seniority Level"
               value={experienceLevel}
-              onChange={(e) =>
-                setExperienceLevel(e.target.value as ExperienceLevel)
-              }
+              onChange={(e) => setExperienceLevel(e.target.value as ExperienceLevel)}
               options={[
                 { label: 'Mid-Level', value: 'MID' },
                 { label: 'Senior', value: 'SENIOR' },
@@ -358,13 +332,13 @@ export default function JobsPage() {
               label="Salary Min (USD)"
               type="number"
               value={salaryMin}
-              onChange={(e) => setSalaryMin(Number(e.target.value))}
+              onChange={(e) => setSalaryMin(e.target.value === '' ? '' : Number(e.target.value))}
             />
             <Input
               label="Salary Max (USD)"
               type="number"
               value={salaryMax}
-              onChange={(e) => setSalaryMax(Number(e.target.value))}
+              onChange={(e) => setSalaryMax(e.target.value === '' ? '' : Number(e.target.value))}
             />
             <Input
               label="Headcount Openings"
@@ -396,12 +370,11 @@ export default function JobsPage() {
               <button
                 type="button"
                 onClick={handleAIGenerateDescription}
-                className="inline-flex items-center gap-1 rounded-md bg-[#EEF2FF] px-2.5 py-1 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
+                disabled={generateDescription.isPending}
+                className="inline-flex items-center gap-1 rounded-md bg-[#EEF2FF] px-2.5 py-1 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100 disabled:opacity-60"
               >
                 <Sparkles className="h-3 w-3" />
-                <span>
-                  {generatingAI ? 'Synthesizing...' : 'Generate with AI Copilot'}
-                </span>
+                <span>{generateDescription.isPending ? 'Generating...' : 'Generate with AI'}</span>
               </button>
             </div>
             <textarea
@@ -416,76 +389,77 @@ export default function JobsPage() {
             <Button variant="outline" onClick={() => setShowCreateModal(false)}>
               Cancel
             </Button>
-            <Button type="submit">Publish Job Requisition</Button>
+            <Button type="submit" disabled={createJob.isPending}>
+              {createJob.isPending ? 'Publishing...' : 'Publish Job Requisition'}
+            </Button>
           </div>
         </form>
       </Modal>
 
       {/* Job Detail Drawer */}
       <Modal
-        open={Boolean(selectedJob)}
-        onClose={() => setSelectedJob(null)}
+        open={Boolean(selectedJobId)}
+        onClose={() => setSelectedJobId(null)}
         title={selectedJob?.title ?? 'Job Details'}
         description={`${selectedJob?.department ?? ''} · ${selectedJob?.location ?? ''}`}
         maxWidth="xl"
         mode="drawer"
       >
+        {jobDetailQuery.isLoading && (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        )}
         {selectedJob && (
           <div className="space-y-5 text-xs">
             <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
               <p className="font-semibold text-slate-900">
                 Compensation Band:{' '}
-                {formatSalaryRange(
-                  selectedJob.salaryMin,
-                  selectedJob.salaryMax,
-                  selectedJob.salaryCurrency,
-                )}
+                {formatSalaryRange(selectedJob.salaryMin ?? undefined, selectedJob.salaryMax ?? undefined, selectedJob.salaryCurrency)}
               </p>
               <p className="mt-1 text-slate-600">
-                Experience Requirement: {selectedJob.minExperienceYears}+ years · Hiring Manager:{' '}
-                {selectedJob.hiringManagerName}
+                Experience Requirement: {selectedJob.minExperienceYears}+ years
+                {selectedJob.hiringManager && <> · Hiring Manager: {selectedJob.hiringManager.name}</>}
               </p>
             </div>
 
             <div>
-              <h4 className="font-semibold uppercase tracking-wider text-slate-400">
-                Overview
-              </h4>
-              <p className="mt-1.5 text-slate-700 leading-relaxed">
-                {selectedJob.description}
-              </p>
+              <h4 className="font-semibold uppercase tracking-wider text-slate-400">Overview</h4>
+              <p className="mt-1.5 text-slate-700 leading-relaxed">{selectedJob.description}</p>
             </div>
 
-            <div>
-              <h4 className="font-semibold uppercase tracking-wider text-slate-400">
-                Key Responsibilities
-              </h4>
-              <ul className="mt-1.5 list-disc space-y-1 pl-4 text-slate-700">
-                {selectedJob.responsibilities.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </div>
+            {selectedJob.responsibilities.length > 0 && (
+              <div>
+                <h4 className="font-semibold uppercase tracking-wider text-slate-400">
+                  Key Responsibilities
+                </h4>
+                <ul className="mt-1.5 list-disc space-y-1 pl-4 text-slate-700">
+                  {selectedJob.responsibilities.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div>
               <h4 className="font-semibold uppercase tracking-wider text-slate-400">
                 Required &amp; Preferred Skills
               </h4>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {selectedJob.requiredSkills.map((s) => (
+                {requiredSkills(selectedJob).map((s) => (
                   <span
-                    key={s}
+                    key={s.name}
                     className="rounded-md border border-indigo-200 bg-[#EEF2FF] px-2.5 py-1 font-medium text-[#4F46E5]"
                   >
-                    {s} (Required)
+                    {s.name} (Required)
                   </span>
                 ))}
-                {selectedJob.preferredSkills.map((s) => (
+                {preferredSkills(selectedJob).map((s) => (
                   <span
-                    key={s}
+                    key={s.name}
                     className="rounded-md border border-[#E2E8F0] bg-white px-2.5 py-1 text-slate-600"
                   >
-                    {s} (Preferred)
+                    {s.name} (Preferred)
                   </span>
                 ))}
               </div>

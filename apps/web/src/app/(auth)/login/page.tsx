@@ -3,35 +3,45 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ArrowRight, KeyRound, ShieldCheck } from 'lucide-react';
 import { DEMO_ACCOUNTS } from '@/lib/auth-client';
-import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { useSignIn } from '@/features/auth/use-session';
+import { ApiClientError } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatRoleLabel } from '@/lib/utils';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loginAsDemoAccount } = useRecruitFlow();
+  const signIn = useSignIn();
 
-  const [email, setEmail] = React.useState('superadmin@recruitflow.io');
-  const [password, setPassword] = React.useState('Password123!');
-  const [loading, setLoading] = React.useState(false);
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+
+  const performSignIn = async (signInEmail: string, signInPassword: string) => {
+    setError(null);
+    try {
+      await signIn.mutateAsync({ email: signInEmail, password: signInPassword });
+      router.push('/dashboard');
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError
+          ? err.message
+          : 'Unable to sign in. Check your credentials and try again.',
+      );
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    loginAsDemoAccount(email);
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 250);
+    void performSignIn(email, password);
   };
 
   const handleQuickDemoSelect = (presetEmail: string, presetPassword: string) => {
     setEmail(presetEmail);
     setPassword(presetPassword);
-    loginAsDemoAccount(presetEmail);
-    router.push('/dashboard');
+    void performSignIn(presetEmail, presetPassword);
   };
 
   return (
@@ -58,6 +68,12 @@ export default function LoginPage() {
       <div className="mt-6 mx-auto w-full max-w-md space-y-5">
         <div className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-2xs">
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
             <Input
               label="Work Email"
               type="email"
@@ -84,8 +100,8 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full" size="lg" disabled={loading}>
-              <span>{loading ? 'Authenticating...' : 'Sign In to Workspace'}</span>
+            <Button type="submit" className="w-full" size="lg" disabled={signIn.isPending}>
+              <span>{signIn.isPending ? 'Authenticating...' : 'Sign In to Workspace'}</span>
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
@@ -105,15 +121,16 @@ export default function LoginPage() {
             <span>One-Click Demo Accounts (5 RBAC Roles)</span>
           </div>
           <p className="mt-1 text-[11px] text-slate-500">
-            Click any role below to auto-fill credentials and sign in immediately:
+            Click any role below to sign in with a real seeded demo account:
           </p>
           <div className="mt-3 space-y-2">
             {DEMO_ACCOUNTS.map((acct) => (
               <button
-                key={acct.id}
+                key={acct.email}
                 type="button"
+                disabled={signIn.isPending}
                 onClick={() => handleQuickDemoSelect(acct.email, acct.password)}
-                className="flex w-full items-center justify-between rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-left transition-colors hover:border-[#4F46E5] hover:bg-[#EEF2FF]/40"
+                className="flex w-full items-center justify-between rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-left transition-colors hover:border-[#4F46E5] hover:bg-[#EEF2FF]/40 disabled:opacity-60"
               >
                 <div>
                   <div className="flex items-center gap-2">

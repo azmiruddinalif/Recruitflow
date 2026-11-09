@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AIProviderType } from '@recruitflow/types';
+import { encryptProviderSecret } from '../../common/utils/secret-crypto.util';
 import { PrismaService } from '../../database/prisma.service';
+
+function maskApiKey(encrypted: string | null): string | null {
+  return encrypted ? '••••••••••••' : null;
+}
 
 @Injectable()
 export class SettingsService {
@@ -157,7 +162,7 @@ export class SettingsService {
       users,
       aiProviders: aiProviders.map((p) => ({
         ...p,
-        apiKeyEncrypted: p.apiKeyEncrypted ? '••••••••' + p.apiKeyEncrypted.slice(-4) : null,
+        apiKeyEncrypted: maskApiKey(p.apiKeyEncrypted),
       })),
       auditLogs,
     };
@@ -186,7 +191,7 @@ export class SettingsService {
             defaultModel: payload.defaultModel,
             isEnabled: payload.isEnabled,
             isDefault: payload.isDefault ?? existing.isDefault,
-            ...(payload.apiKey ? { apiKeyEncrypted: payload.apiKey } : {}),
+            ...(payload.apiKey ? { apiKeyEncrypted: encryptProviderSecret(payload.apiKey) } : {}),
           },
         })
       : await this.prisma.aIProvider.create({
@@ -194,7 +199,7 @@ export class SettingsService {
             organizationId: null,
             provider: payload.provider,
             displayName: payload.displayName,
-            apiKeyEncrypted: payload.apiKey ?? null,
+            apiKeyEncrypted: payload.apiKey ? encryptProviderSecret(payload.apiKey) : null,
             defaultModel: payload.defaultModel,
             isEnabled: payload.isEnabled,
             isDefault: payload.isDefault ?? false,
@@ -213,7 +218,74 @@ export class SettingsService {
 
     return {
       ...record,
-      apiKeyEncrypted: record.apiKeyEncrypted ? '••••••••' : null,
+      apiKeyEncrypted: maskApiKey(record.apiKeyEncrypted),
+    };
+  }
+
+  async listOrganizationAIProviders(organizationId: string) {
+    const providers = await this.prisma.aIProvider.findMany({
+      where: { organizationId },
+      orderBy: { provider: 'asc' },
+    });
+    return providers.map((p) => ({
+      ...p,
+      apiKeyEncrypted: maskApiKey(p.apiKeyEncrypted),
+    }));
+  }
+
+  async upsertOrganizationAIProvider(
+    organizationId: string,
+    actorId: string,
+    payload: {
+      provider: AIProviderType;
+      displayName: string;
+      apiKey?: string;
+      defaultModel: string;
+      isEnabled: boolean;
+      isDefault?: boolean;
+    },
+  ) {
+    const existing = await this.prisma.aIProvider.findFirst({
+      where: { organizationId, provider: payload.provider },
+    });
+
+    const record = existing
+      ? await this.prisma.aIProvider.update({
+          where: { id: existing.id },
+          data: {
+            displayName: payload.displayName,
+            defaultModel: payload.defaultModel,
+            isEnabled: payload.isEnabled,
+            isDefault: payload.isDefault ?? existing.isDefault,
+            ...(payload.apiKey ? { apiKeyEncrypted: encryptProviderSecret(payload.apiKey) } : {}),
+          },
+        })
+      : await this.prisma.aIProvider.create({
+          data: {
+            organizationId,
+            provider: payload.provider,
+            displayName: payload.displayName,
+            apiKeyEncrypted: payload.apiKey ? encryptProviderSecret(payload.apiKey) : null,
+            defaultModel: payload.defaultModel,
+            isEnabled: payload.isEnabled,
+            isDefault: payload.isDefault ?? false,
+          },
+        });
+
+    await this.prisma.activityLog.create({
+      data: {
+        organizationId,
+        actorId,
+        entityType: 'AI_PROVIDER',
+        entityId: record.id,
+        action: 'ORG_AI_CONFIGURED',
+        description: `Configured organization AI provider ${payload.provider} (${payload.defaultModel})`,
+      },
+    });
+
+    return {
+      ...record,
+      apiKeyEncrypted: maskApiKey(record.apiKeyEncrypted),
     };
   }
 
@@ -231,6 +303,53 @@ export class SettingsService {
         entityId: organizationId,
         action: isActive ? 'ORG_ACTIVATED' : 'ORG_SUSPENDED',
         description: `Super Admin set organization active=${isActive}`,
+      },
+    });
+
+    return updated;
+  }
+
+  async listAllPlans() {
+    return this.prisma.subscriptionPlan.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  async updatePlan(
+    actorId: string,
+    planId: string,
+    dto: {
+      name?: string;
+      description?: string;
+      priceMonthlyCents?: number;
+      priceYearlyCents?: number;
+      maxJobs?: number;
+      maxCandidates?: number;
+      maxMembers?: number;
+      aiCreditsMonthly?: number;
+      features?: string[];
+      isPublic?: boolean;
+      isActive?: boolean;
+      sortOrder?: number;
+    },
+  ) {
+    const existing = await this.prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+    if (!existing) {
+      throw new NotFoundException('Subscription plan not found');
+    }
+
+    const updated = await this.prisma.subscriptionPlan.update({
+      where: { id: planId },
+      data: dto,
+    });
+
+    await this.prisma.activityLog.create({
+      data: {
+        actorId,
+        entityType: 'SUBSCRIPTION_PLAN',
+        entityId: planId,
+        action: 'PLAN_UPDATED',
+        description: `Super Admin updated plan ${existing.code} (${existing.name})`,
       },
     });
 

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { usePathname } from 'next/navigation';
 import {
   BarChart3,
@@ -12,6 +13,7 @@ import {
   CreditCard,
   Kanban,
   LayoutDashboard,
+  LogOut,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -21,6 +23,13 @@ import {
 } from 'lucide-react';
 import { cn, formatRoleLabel } from '@/lib/utils';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { useCurrentOrganization } from '@/features/organizations/use-organizations';
+import { useJobsList } from '@/features/jobs/use-jobs';
+import { useCandidatesList } from '@/features/candidates/use-candidates';
+import { useApplicationsKanban } from '@/features/applications/use-applications';
+import { useInterviewsList } from '@/features/interviews/use-interviews';
+import { useNotifications } from '@/features/notifications/use-notifications';
+import { useSignOut } from '@/features/auth/use-session';
 
 interface NavGroup {
   label: string;
@@ -40,17 +49,16 @@ interface SidebarProps {
 
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const {
-    organizations,
-    activeOrganization,
-    switchOrganization,
-    currentUser,
-    jobs,
-    candidates,
-    applications,
-    interviews,
-    notifications,
-  } = useRecruitFlow();
+  const router = useRouter();
+  const { organizations, activeOrganization, switchOrganization, currentUser } = useRecruitFlow();
+  const signOut = useSignOut();
+
+  const orgQuery = useCurrentOrganization();
+  const jobsQuery = useJobsList({ status: 'PUBLISHED' });
+  const candidatesQuery = useCandidatesList({});
+  const applicationsQuery = useApplicationsKanban({});
+  const interviewsQuery = useInterviewsList({ status: 'SCHEDULED' });
+  const notificationsQuery = useNotifications();
 
   // Auto-close the mobile drawer whenever the user navigates to a new page.
   React.useEffect(() => {
@@ -58,43 +66,26 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const orgJobs = jobs.filter((j) => j.organizationId === activeOrganization.id);
-  const orgCandidates = candidates.filter((c) => c.organizationId === activeOrganization.id);
-  const orgApps = applications.filter((a) => a.organizationId === activeOrganization.id);
-  const orgInterviews = interviews.filter(
-    (i) => i.organizationId === activeOrganization.id && i.status === 'SCHEDULED',
-  );
+  const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
+  const publishedJobsCount = jobsQuery.data?.data.length ?? 0;
+  const candidatesCount = candidatesQuery.data?.meta.total ?? 0;
+  const applicationsCount = applicationsQuery.data?.length ?? 0;
+  const scheduledInterviewsCount = interviewsQuery.data?.length ?? 0;
+
+  const handleSignOut = async () => {
+    await signOut.mutateAsync();
+    router.push('/login');
+  };
 
   const navGroups: NavGroup[] = [
     {
       label: 'Core ATS',
       items: [
         { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-        {
-          name: 'Jobs',
-          href: '/jobs',
-          icon: Briefcase,
-          badge: orgJobs.filter((j) => j.status === 'PUBLISHED').length,
-        },
-        {
-          name: 'Candidates',
-          href: '/candidates',
-          icon: UserSquare2,
-          badge: orgCandidates.length,
-        },
-        {
-          name: 'Applications Pipeline',
-          href: '/applications',
-          icon: Kanban,
-          badge: orgApps.length,
-        },
-        {
-          name: 'Interviews',
-          href: '/interviews',
-          icon: Calendar,
-          badge: orgInterviews.length,
-        },
+        { name: 'Jobs', href: '/jobs', icon: Briefcase, badge: publishedJobsCount },
+        { name: 'Candidates', href: '/candidates', icon: UserSquare2, badge: candidatesCount },
+        { name: 'Applications Pipeline', href: '/applications', icon: Kanban, badge: applicationsCount },
+        { name: 'Interviews', href: '/interviews', icon: Calendar, badge: scheduledInterviewsCount },
       ],
     },
     {
@@ -179,15 +170,17 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <div className="border-b border-[#E2E8F0] p-3">
         <label className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
           <span>Active Workspace</span>
-          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-            {activeOrganization.planName}
-          </span>
+          {orgQuery.data?.subscription?.plan.name && (
+            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+              {orgQuery.data.subscription.plan.name}
+            </span>
+          )}
         </label>
         <div className="relative flex items-center">
           <Building2 className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
           <select
             value={activeOrganization.id}
-            onChange={(e) => switchOrganization(e.target.value)}
+            onChange={(e) => void switchOrganization(e.target.value)}
             className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] pl-8 pr-3 text-xs font-semibold text-slate-800 focus:border-[#4F46E5] focus:outline-none"
           >
             {organizations.map((org) => (
@@ -203,7 +196,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {navGroups.map((group) => {
           const visibleItems = group.items.filter(
-            (item) => !item.superAdminOnly || currentUser.role === 'SUPER_ADMIN',
+            (item) => !item.superAdminOnly || currentUser.isSuperAdmin,
           );
           if (visibleItems.length === 0) return null;
 
@@ -269,12 +262,14 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               {formatRoleLabel(currentUser.role)}
             </p>
           </div>
-          <Link
-            href="/login"
-            className="rounded-md border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center gap-1 rounded-md border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
           >
-            Switch
-          </Link>
+            <LogOut className="h-3 w-3" />
+            Sign Out
+          </button>
         </div>
       </div>
       </aside>

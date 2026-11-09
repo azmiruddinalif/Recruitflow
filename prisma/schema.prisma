@@ -134,6 +134,7 @@ enum AIFeatureType {
   JOB_DESCRIPTION
   INTERVIEW_ASSISTANT
   EMAIL_ASSISTANT
+  CANDIDATE_SUMMARY
 }
 
 enum NotificationType {

@@ -6,69 +6,60 @@ import { useRouter } from 'next/navigation';
 import {
   Bell,
   Briefcase,
+  Building2,
   Calendar,
+  Check,
+  LogOut,
   Menu,
   Plus,
   Search,
-  ShieldCheck,
   Sparkles,
   UserPlus,
 } from 'lucide-react';
-import type { SystemRoleCode } from '@recruitflow/types';
+import {
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotifications,
+} from '@/features/notifications/use-notifications';
+import { useCandidatesList } from '@/features/candidates/use-candidates';
+import { useJobsList } from '@/features/jobs/use-jobs';
+import { useSignOut } from '@/features/auth/use-session';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
-import { formatRoleLabel, getInitials } from '@/lib/utils';
-
-const ALL_ROLES: SystemRoleCode[] = [
-  'SUPER_ADMIN',
-  'ORG_ADMIN',
-  'HIRING_MANAGER',
-  'RECRUITER',
-  'INTERVIEWER',
-];
+import { getInitials } from '@/lib/utils';
 
 export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter();
-  const {
-    currentUser,
-    switchActiveRole,
-    notifications,
-    markNotificationRead,
-    markAllNotificationsRead,
-    candidates,
-    jobs,
-  } = useRecruitFlow();
+  const { currentUser, activeOrganization, organizations, switchOrganization } = useRecruitFlow();
+  const signOut = useSignOut();
 
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [debouncedQuery, setDebouncedQuery] = React.useState('');
   const [showQuickCreate, setShowQuickCreate] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [showOrgSwitcher, setShowOrgSwitcher] = React.useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = React.useState(false);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 250);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
-  const filteredCandidates = React.useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase();
-    return candidates
-      .filter(
-        (c) =>
-          c.fullName.toLowerCase().includes(q) ||
-          c.currentTitle.toLowerCase().includes(q) ||
-          c.skills.some((s) => s.name.toLowerCase().includes(q)),
-      )
-      .slice(0, 4);
-  }, [candidates, searchQuery]);
+  const notificationsQuery = useNotifications();
+  const unreadCount = notificationsQuery.data?.unreadCount ?? 0;
+  const notifications = notificationsQuery.data?.notifications ?? [];
+  const markRead = useMarkNotificationRead();
+  const markAllRead = useMarkAllNotificationsRead();
 
-  const filteredJobs = React.useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase();
-    return jobs
-      .filter(
-        (j) =>
-          j.title.toLowerCase().includes(q) ||
-          j.department.toLowerCase().includes(q),
-      )
-      .slice(0, 3);
-  }, [jobs, searchQuery]);
+  const searchActive = debouncedQuery.trim().length > 0;
+  const candidatesQuery = useCandidatesList({ search: searchActive ? debouncedQuery : undefined });
+  const jobsQuery = useJobsList({ search: searchActive ? debouncedQuery : undefined });
+  const filteredCandidates = searchActive ? (candidatesQuery.data?.data ?? []).slice(0, 4) : [];
+  const filteredJobs = searchActive ? (jobsQuery.data?.data ?? []).slice(0, 3) : [];
+
+  const handleSignOut = async () => {
+    await signOut.mutateAsync();
+    router.push('/login');
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-2 border-b border-[#E2E8F0] bg-white px-3 sm:px-6">
@@ -92,15 +83,12 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
             onBlur={() => setTimeout(() => setShowSearchDropdown(false), 180)}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search candidates, jobs, skills..."
-            className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#4F46E5] focus:bg-white focus:outline-none sm:pr-14"
+            className="h-9 w-full rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-400 focus:border-[#4F46E5] focus:bg-white focus:outline-none"
           />
-          <span className="pointer-events-none absolute right-2.5 hidden rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-400 sm:block">
-            Ctrl K
-          </span>
         </div>
 
         {/* Live Search Results Dropdown */}
-        {showSearchDropdown && searchQuery.trim().length > 0 && (
+        {showSearchDropdown && searchActive && (
           <div className="absolute left-0 top-11 z-50 w-full rounded-xl border border-[#E2E8F0] bg-white p-2 shadow-xl">
             {filteredCandidates.length === 0 && filteredJobs.length === 0 ? (
               <p className="px-3 py-4 text-center text-xs text-slate-500">
@@ -166,23 +154,37 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
 
       {/* Right Actions */}
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
-        {/* Interactive RBAC Role Switcher for Testing Permissions */}
-        <div className="hidden md:flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1">
-          <ShieldCheck className="h-3.5 w-3.5 text-[#4F46E5]" />
-          <span className="text-[11px] font-medium text-slate-500">RBAC Role:</span>
-          <select
-            aria-label="RBAC Role Switcher"
-            value={currentUser.role}
-            onChange={(e) => switchActiveRole(e.target.value as SystemRoleCode)}
-            className="bg-transparent text-xs font-semibold text-slate-900 focus:outline-none cursor-pointer"
-          >
-            {ALL_ROLES.map((role) => (
-              <option key={role} value={role}>
-                {formatRoleLabel(role)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Organization Switcher */}
+        {organizations.length > 1 && (
+          <div className="relative hidden md:block">
+            <button
+              type="button"
+              onClick={() => setShowOrgSwitcher((prev) => !prev)}
+              className="flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              <Building2 className="h-3.5 w-3.5 text-[#4F46E5]" />
+              <span className="max-w-[140px] truncate">{activeOrganization.name}</span>
+            </button>
+            {showOrgSwitcher && (
+              <div className="absolute right-0 top-11 z-50 w-56 rounded-xl border border-[#E2E8F0] bg-white p-1.5 shadow-xl">
+                {organizations.map((org) => (
+                  <button
+                    key={org.id}
+                    type="button"
+                    onClick={() => {
+                      void switchOrganization(org.id);
+                      setShowOrgSwitcher(false);
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <span className="truncate">{org.name}</span>
+                    {org.id === activeOrganization.id && <Check className="h-3.5 w-3.5 text-[#4F46E5]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick Create Dropdown */}
         <div className="relative">
@@ -263,24 +265,26 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
                 </span>
                 <button
                   type="button"
-                  onClick={markAllNotificationsRead}
+                  onClick={() => markAllRead.mutate()}
                   className="text-[11px] font-medium text-[#4F46E5] hover:underline"
                 >
                   Mark all read
                 </button>
               </div>
               <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+                {notifications.length === 0 && (
+                  <p className="px-4 py-6 text-center text-xs text-slate-500">No notifications yet.</p>
+                )}
                 {notifications.slice(0, 6).map((n) => (
                   <div
                     key={n.id}
-                    onClick={() => markNotificationRead(n.id)}
+                    onClick={() => markRead.mutate(n.id)}
                     className={`cursor-pointer px-4 py-3 hover:bg-slate-50 ${
                       !n.isRead ? 'bg-[#EEF2FF]/40' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-slate-900">{n.title}</p>
-                      <span className="text-[10px] text-slate-400">{n.createdAt}</span>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-600">{n.message}</p>
                   </div>
@@ -300,17 +304,27 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
         </div>
 
         {/* User Profile Pill */}
-        <Link
-          href="/settings"
-          className="flex items-center gap-2.5 rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1.5 hover:bg-slate-50"
-        >
-          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#EEF2FF] text-[11px] font-semibold text-[#4F46E5]">
-            {getInitials(currentUser.name)}
-          </div>
-          <span className="hidden lg:inline text-xs font-medium text-slate-800">
-            {currentUser.name}
-          </span>
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/settings"
+            className="flex items-center gap-2.5 rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1.5 hover:bg-slate-50"
+          >
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#EEF2FF] text-[11px] font-semibold text-[#4F46E5]">
+              {getInitials(currentUser.name)}
+            </div>
+            <span className="hidden lg:inline text-xs font-medium text-slate-800">
+              {currentUser.name}
+            </span>
+          </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            title="Sign out"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#E2E8F0] bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </header>
   );

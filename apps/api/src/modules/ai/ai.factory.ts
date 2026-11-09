@@ -1,6 +1,8 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { AIFeatureType, AIProviderType } from '@recruitflow/types';
+import { decryptProviderSecret } from '../../common/utils/secret-crypto.util';
 import { PrismaService } from '../../database/prisma.service';
+import { classifyProviderError } from './utils/classify-provider-error.util';
 import {
   AIProviderConfig,
   AIProviderInterface,
@@ -167,7 +169,7 @@ export class AIFactory {
       if (matchedDb && matchedDb.apiKeyEncrypted) {
         return {
           provider: matchedDb.provider,
-          apiKey: matchedDb.apiKeyEncrypted,
+          apiKey: decryptProviderSecret(matchedDb.apiKeyEncrypted),
           model: matchedDb.defaultModel,
           timeoutMs: matchedDb.timeoutMs,
           maxRetries: matchedDb.maxRetries,
@@ -186,7 +188,7 @@ export class AIFactory {
     if (anyEnabledDb && anyEnabledDb.apiKeyEncrypted) {
       return {
         provider: anyEnabledDb.provider,
-        apiKey: anyEnabledDb.apiKeyEncrypted,
+        apiKey: decryptProviderSecret(anyEnabledDb.apiKeyEncrypted),
         model: anyEnabledDb.defaultModel,
         timeoutMs: anyEnabledDb.timeoutMs,
         maxRetries: anyEnabledDb.maxRetries,
@@ -257,7 +259,7 @@ export class AIFactory {
         success: false,
         errorMessage,
       });
-      throw error;
+      throw classifyProviderError(error, config.provider);
     }
   }
 
@@ -305,7 +307,7 @@ export class AIFactory {
         success: false,
         errorMessage,
       });
-      throw error;
+      throw classifyProviderError(error, config.provider);
     }
   }
 

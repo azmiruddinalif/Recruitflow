@@ -2,6 +2,7 @@ import { Job as BullJob } from 'bullmq';
 import { PrismaClient, AIProviderType } from '@prisma/client';
 import { aiParsedResumeSchema } from '@recruitflow/validation';
 import { ResumeParseJobData } from '../queues/queue.constants';
+import { decryptProviderSecret } from '../utils/secret-crypto.util';
 
 export async function processResumeParseJob(
   job: BullJob<ResumeParseJobData>,
@@ -139,7 +140,7 @@ export async function resolveConfiguredProvider(
   if (dbProvider && dbProvider.apiKeyEncrypted) {
     return {
       provider: dbProvider.provider,
-      apiKey: dbProvider.apiKeyEncrypted,
+      apiKey: decryptProviderSecret(dbProvider.apiKeyEncrypted),
       model: dbProvider.defaultModel,
       timeoutMs: dbProvider.timeoutMs || 30000,
     };

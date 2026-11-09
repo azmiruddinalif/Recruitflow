@@ -5,14 +5,24 @@ import Link from 'next/link';
 import { CheckCircle2, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { apiClient } from '@/lib/api-client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = React.useState('');
   const [submitted, setSubmitted] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      await apiClient.post('/auth/forgot-password', { email });
+    } finally {
+      setIsSubmitting(false);
+      // Always show the same confirmation regardless of whether the account
+      // exists, so this endpoint can't be used to enumerate registered emails.
+      setSubmitted(true);
+    }
   };
 
   return (
@@ -52,8 +62,8 @@ export default function ForgotPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com"
             />
-            <Button type="submit" className="w-full">
-              Send Reset Instructions
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? 'Sending...' : 'Send Reset Instructions'}
             </Button>
           </form>
         )}

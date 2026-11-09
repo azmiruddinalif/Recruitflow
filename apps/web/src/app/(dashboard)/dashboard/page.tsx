@@ -2,18 +2,19 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
   Briefcase,
   Calendar,
   CheckCircle2,
   FileText,
+  Loader2,
   Sparkles,
   Users,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
+import { useDashboardMetrics } from '@/features/analytics/use-analytics';
+import { useApplicationsKanban } from '@/features/applications/use-applications';
 import { StatCard } from '@/components/shared/stat-card';
 import { AIMatchBadge } from '@/components/shared/ai-match-badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,94 +25,24 @@ import {
 import { formatDateTime, getApplicationStageStyle } from '@/lib/utils';
 
 export default function DashboardPage() {
-  const {
-    activeOrganization,
-    candidates,
-    jobs,
-    applications,
-    interviews,
-    auditLogs,
-  } = useRecruitFlow();
+  const { activeOrganization } = useRecruitFlow();
 
   const [dateRange, setDateRange] = React.useState<'7d' | '30d' | '90d' | '1y' | 'custom'>('30d');
   const [customFrom, setCustomFrom] = React.useState('2026-01-01');
   const [customTo, setCustomTo] = React.useState('2026-12-31');
 
-  useQuery({
-    queryKey: ['dashboard-metrics', activeOrganization.id, dateRange, customFrom, customTo],
-    queryFn: () =>
-      apiClient
-        .get(
-          `/analytics/dashboard?range=${dateRange}${
-            dateRange === 'custom' ? `&from=${customFrom}&to=${customTo}` : ''
-          }`,
-        )
-        .catch(() => null),
+  const metricsQuery = useDashboardMetrics({
+    range: dateRange,
+    from: dateRange === 'custom' ? customFrom : undefined,
+    to: dateRange === 'custom' ? customTo : undefined,
   });
+  const metrics = metricsQuery.data;
 
-  const rangeMultiplier =
-    dateRange === '7d' ? 0.5 : dateRange === '30d' ? 1 : dateRange === '90d' ? 1.4 : 1.8;
+  const applicationsQuery = useApplicationsKanban({});
+  const applications = applicationsQuery.data ?? [];
 
-  const orgCandidates = candidates.filter(
-    (c) => c.organizationId === activeOrganization.id,
-  );
-  const orgJobs = jobs.filter((j) => j.organizationId === activeOrganization.id);
-  const orgApps = applications.filter(
-    (a) => a.organizationId === activeOrganization.id,
-  );
-  const orgInterviews = interviews.filter(
-    (i) => i.organizationId === activeOrganization.id,
-  );
-
-  const publishedJobsCount = orgJobs.filter((j) => j.status === 'PUBLISHED').length;
-  const scheduledInterviewsCount = orgInterviews.filter(
-    (i) => i.status === 'SCHEDULED',
-  ).length;
-  const hiredCount = orgApps.filter((a) => a.status === 'HIRED').length;
-
-  const funnelData = [
-    {
-      stage: 'New',
-      count: Math.max(1, Math.round(orgApps.filter((a) => a.status === 'NEW').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Screening',
-      count: Math.max(1, Math.round(orgApps.filter((a) => a.status === 'SCREENING').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Shortlisted',
-      count: Math.max(1, Math.round(orgApps.filter((a) => a.status === 'SHORTLISTED').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Interview',
-      count: Math.max(1, Math.round(orgApps.filter((a) => a.status === 'INTERVIEW').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Assessment',
-      count: Math.max(0, Math.round(orgApps.filter((a) => a.status === 'ASSESSMENT').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Offer',
-      count: Math.max(0, Math.round(orgApps.filter((a) => a.status === 'OFFER').length * rangeMultiplier)),
-    },
-    {
-      stage: 'Hired',
-      count: Math.max(1, Math.round(hiredCount * rangeMultiplier)),
-    },
-  ];
-
-  const velocityData = [
-    { month: 'Oct', applications: 18, interviews: 8, hired: 2 },
-    { month: 'Nov', applications: 26, interviews: 11, hired: 3 },
-    { month: 'Dec', applications: 22, interviews: 9, hired: 2 },
-    { month: 'Jan', applications: 34, interviews: 15, hired: 4 },
-    {
-      month: 'Feb',
-      applications: Math.max(38, orgApps.length * 5),
-      interviews: Math.max(16, orgInterviews.length * 4),
-      hired: Math.max(4, hiredCount * 3),
-    },
-  ];
+  const funnelData = (metrics?.funnel ?? []).map((f) => ({ stage: f.status, count: f.count }));
+  const velocityData = metrics?.hiringTrends ?? [];
 
   return (
     <div className="space-y-6">
@@ -173,6 +104,7 @@ export default function DashboardPage() {
               />
             </div>
           )}
+          {metricsQuery.isFetching && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           <Link
             href="/ai-studio"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-[#EEF2FF] px-3.5 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
@@ -194,46 +126,33 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Total Candidates"
-          value={orgCandidates.length}
-          delta="+18% vs last mo"
-          deltaType="positive"
+          value={metrics?.totalCandidates ?? 0}
           icon={<Users className="h-4 w-4" />}
           subtitle="Active talent directory"
         />
         <StatCard
           label="Published Jobs"
-          value={publishedJobsCount}
-          delta={`${orgJobs.length} total reqs`}
-          deltaType="neutral"
+          value={metrics?.activeJobs ?? 0}
           icon={<Briefcase className="h-4 w-4" />}
           subtitle="Open across departments"
         />
         <StatCard
-          label="Active Applications"
-          value={orgApps.length}
-          delta="+24% velocity"
-          deltaType="positive"
+          label="Applications in Window"
+          value={metrics?.totalApplications ?? 0}
           icon={<FileText className="h-4 w-4" />}
-          subtitle="Avg AI match: 86%"
+          subtitle="Within selected date range"
         />
         <StatCard
           label="Scheduled Interviews"
-          value={scheduledInterviewsCount}
-          delta={`${orgInterviews.length} total`}
-          deltaType="positive"
+          value={metrics?.scheduledInterviews ?? 0}
           icon={<Calendar className="h-4 w-4" />}
-          subtitle="Scorecards enabled"
+          subtitle="Upcoming, confirmed"
         />
         <StatCard
-          label="Offers & Hires"
-          value={
-            orgApps.filter((a) => a.status === 'HIRED' || a.status === 'OFFER')
-              .length
-          }
-          delta="18d avg time-to-hire"
-          deltaType="positive"
+          label="Hired"
+          value={metrics?.hiredCandidates ?? 0}
           icon={<CheckCircle2 className="h-4 w-4" />}
-          subtitle={`${hiredCount} confirmed hires`}
+          subtitle={`${metrics?.rejectedApplications ?? 0} rejected in window`}
         />
       </div>
 
@@ -264,7 +183,7 @@ export default function DashboardPage() {
             <div>
               <CardTitle>Hiring Velocity &amp; Conversion Trends</CardTitle>
               <CardDescription>
-                Monthly application volume, interview panels, and closed hires
+                Monthly application volume, interview panels, and closed hires (last 6 months)
               </CardDescription>
             </div>
             <Link
@@ -295,7 +214,7 @@ export default function DashboardPage() {
               href="/applications"
               className="text-xs font-medium text-[#4F46E5] hover:underline"
             >
-              View All ({orgApps.length}) →
+              View All ({applications.length}) →
             </Link>
           </CardHeader>
           <CardContent className="p-0">
@@ -311,48 +230,43 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {[...orgApps]
-                    .sort((a, b) => b.aiMatch.overallScore - a.aiMatch.overallScore)
+                  {[...applications]
+                    .sort((a, b) => (b.aiMatch?.overallScore ?? -1) - (a.aiMatch?.overallScore ?? -1))
                     .slice(0, 5)
                     .map((app) => {
-                      const candidate = candidates.find((c) => c.id === app.candidateId);
-                      const job = jobs.find((j) => j.id === app.jobId);
                       const stageStyle = getApplicationStageStyle(app.status);
                       return (
                         <tr key={app.id} className="hover:bg-slate-50/80">
                           <td className="px-5 py-3.5">
                             <p className="font-semibold text-slate-900">
-                              {candidate?.fullName ?? 'Candidate'}
+                              {app.candidate.fullName}
                             </p>
                             <p className="text-[11px] text-slate-500">
-                              {candidate?.currentTitle} · {candidate?.currentCompany}
+                              {app.candidate.currentTitle} · {app.candidate.currentCompany}
                             </p>
                           </td>
                           <td className="px-4 py-3.5">
-                            <p className="font-medium text-slate-800">
-                              {job?.title ?? 'Job Requisition'}
-                            </p>
-                            <p className="text-[11px] text-slate-500">
-                              {job?.department}
-                            </p>
+                            <p className="font-medium text-slate-800">{app.job.title}</p>
                           </td>
                           <td className="px-4 py-3.5">
                             <span
                               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium ${stageStyle.bg} ${stageStyle.text} ${stageStyle.border}`}
                             >
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${stageStyle.dot}`}
-                              />
+                              <span className={`h-1.5 w-1.5 rounded-full ${stageStyle.dot}`} />
                               {stageStyle.label}
                             </span>
                           </td>
                           <td className="px-4 py-3.5">
-                            <AIMatchBadge score={app.aiMatch.overallScore} />
+                            <AIMatchBadge score={app.aiMatch?.overallScore ?? null} />
                           </td>
                           <td className="px-5 py-3.5 text-right text-[11px] text-slate-600">
-                            {app.aiMatch.matchingSkills.slice(0, 3).join(', ')}
-                            {app.aiMatch.matchingSkills.length > 3 &&
-                              ` +${app.aiMatch.matchingSkills.length - 3}`}
+                            {app.aiMatch
+                              ? `${app.aiMatch.matchingSkills.slice(0, 3).join(', ')}${
+                                  app.aiMatch.matchingSkills.length > 3
+                                    ? ` +${app.aiMatch.matchingSkills.length - 3}`
+                                    : ''
+                                }`
+                              : 'Not yet evaluated'}
                           </td>
                         </tr>
                       );
@@ -379,31 +293,25 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent className="space-y-3">
-              {orgInterviews.slice(0, 3).map((intv) => {
-                const cand = candidates.find((c) => c.id === intv.candidateId);
-                const job = jobs.find((j) => j.id === intv.jobId);
-                return (
-                  <div
-                    key={intv.id}
-                    className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="rounded bg-[#EEF2FF] px-1.5 py-0.5 text-[10px] font-semibold text-[#4F46E5]">
-                        {intv.type}
-                      </span>
-                      <span className="text-[11px] font-medium text-slate-500">
-                        {formatDateTime(intv.scheduledAt)}
-                      </span>
-                    </div>
-                    <p className="mt-1.5 text-xs font-semibold text-slate-900">
-                      {intv.title}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-slate-600">
-                      {cand?.fullName} · {job?.title}
-                    </p>
+              {(metrics?.upcomingInterviews ?? []).length === 0 && (
+                <p className="text-xs text-slate-400">No upcoming interviews.</p>
+              )}
+              {(metrics?.upcomingInterviews ?? []).map((intv) => (
+                <div key={intv.id} className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="rounded bg-[#EEF2FF] px-1.5 py-0.5 text-[10px] font-semibold text-[#4F46E5]">
+                      {intv.type}
+                    </span>
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {formatDateTime(intv.scheduledAt)}
+                    </span>
                   </div>
-                );
-              })}
+                  <p className="mt-1.5 text-xs font-semibold text-slate-900">{intv.title}</p>
+                  <p className="mt-0.5 text-[11px] text-slate-600">
+                    {intv.candidateName} · {intv.jobTitle}
+                  </p>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -413,19 +321,18 @@ export default function DashboardPage() {
               <CardDescription>Live audit log of recruiter &amp; AI actions</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {auditLogs.slice(0, 3).map((log) => (
+              {(metrics?.recentActivities ?? []).length === 0 && (
+                <p className="text-xs text-slate-400">No recent activity.</p>
+              )}
+              {(metrics?.recentActivities ?? []).map((log) => (
                 <div key={log.id} className="flex items-start gap-2.5 text-xs">
                   <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#4F46E5]" />
                   <div>
                     <p className="font-medium text-slate-800">
                       {log.actorName}{' '}
-                      <span className="font-normal text-slate-500">
-                        performed {log.action}
-                      </span>
+                      <span className="font-normal text-slate-500">performed {log.action}</span>
                     </p>
-                    <p className="text-[11px] text-slate-400">
-                      {log.entityType} · {log.createdAt}
-                    </p>
+                    <p className="text-[11px] text-slate-400">{formatDateTime(log.createdAt)}</p>
                   </div>
                 </div>
               ))}

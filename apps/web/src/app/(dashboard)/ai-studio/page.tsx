@@ -5,143 +5,192 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileText,
+  Loader2,
   Mail,
   MessageSquare,
+  Settings as SettingsIcon,
   Sparkles,
   Target,
   Upload,
+  UserSquare2,
 } from 'lucide-react';
+import Link from 'next/link';
+import type { ParsedResumeData } from '@recruitflow/types';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
+import {
+  useAIProviderStatus,
+  useApproveParsedResume,
+  useGenerateCandidateSummary,
+  useGenerateEmailDraft,
+  useGenerateInterviewQuestions,
+  useGenerateJobDescription,
+  useMatchCandidate,
+  useParseResume,
+  useResumeParseStatus,
+} from '@/features/ai/use-ai';
+import { useCandidatesList } from '@/features/candidates/use-candidates';
+import { useCreateJob, useJobsList } from '@/features/jobs/use-jobs';
+
+type EditableParsedResume = ParsedResumeData & { skillsCsv: string };
+
+function toEditable(data: ParsedResumeData): EditableParsedResume {
+  return { ...data, skillsCsv: data.skills.map((s) => s.name).join(', ') };
+}
+
+function AIErrorNotice({ error }: { error: unknown }) {
+  const message = error instanceof Error ? error.message : 'AI request failed.';
+  const notConfigured = message.includes('AI_PROVIDER_NOT_CONFIGURED') || message.includes('No AI provider');
+  return (
+    <div className="rounded-lg border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800 flex items-start gap-2">
+      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+      <div>
+        <p className="font-semibold">{notConfigured ? 'No AI provider configured' : 'AI request failed'}</p>
+        <p className="mt-0.5">
+          {notConfigured ? (
+            <>
+              Configure an OpenAI, Gemini, or Anthropic API key in{' '}
+              <Link href="/settings" className="font-semibold underline">
+                Settings → AI Providers
+              </Link>{' '}
+              before using this feature.
+            </>
+          ) : (
+            message
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function AIStudioPage() {
-  const {
-    activeOrganization,
-    candidates,
-    jobs,
-    aiProviders,
-    createCandidate,
-    computeAIMatchForPair,
-    createJob,
-    pushToast,
-  } = useRecruitFlow();
+  const { activeOrganization, pushToast } = useRecruitFlow();
 
   const [activeTab, setActiveTab] = useState<
-    'RESUME_PARSER' | 'CANDIDATE_MATCH' | 'JOB_GENERATOR' | 'INTERVIEW_ASSIST' | 'EMAIL_ASSIST'
+    | 'RESUME_PARSER'
+    | 'CANDIDATE_MATCH'
+    | 'JOB_GENERATOR'
+    | 'INTERVIEW_ASSIST'
+    | 'EMAIL_ASSIST'
+    | 'CANDIDATE_SUMMARY'
   >('RESUME_PARSER');
 
-  const orgCandidates = candidates.filter((c) => c.organizationId === activeOrganization.id);
-  const orgJobs = jobs.filter((j) => j.organizationId === activeOrganization.id);
-  const activeProvider = aiProviders.find((p) => p.isConfigured && p.isActive);
+  const { data: providerStatus } = useAIProviderStatus();
 
-  // 1. Resume Parser State (PENDING_REVIEW -> Human Approve)
-  const [resumeRawText, setResumeRawText] = useState(
-    `MARCUS CHEN\nPrincipal Backend & AI Engineer\nEmail: marcus.chen@cloudnative.dev | Phone: +1 (650) 442-1980 | Seattle, WA\n\nSUMMARY\n9+ years building distributed TypeScript, NestJS, PostgreSQL, and Kubernetes systems.\n\nEXPERIENCE\nStaff Backend Engineer — Vercel (2022 - Present)\nSenior Platform Engineer — Twilio (2018 - 2022)\n\nEDUCATION\nB.S. Computer Science — University of Washington\n\nSKILLS\nTypeScript, NestJS, Next.js, PostgreSQL, Prisma, Redis, Docker, Kubernetes`,
-  );
-  const [parsedStaging, setParsedStaging] = useState<{
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    location: string;
-    currentTitle: string;
-    currentCompany: string;
-    totalExperienceYears: number;
-    summary: string;
-    skillsCsv: string;
-  } | null>({
-    firstName: 'Marcus',
-    lastName: 'Chen',
-    email: 'marcus.chen@cloudnative.dev',
-    phone: '+1 (650) 442-1980',
-    location: 'Seattle, WA',
-    currentTitle: 'Principal Backend & AI Engineer',
-    currentCompany: 'Vercel',
-    totalExperienceYears: 9,
-    summary:
-      '9+ years building distributed TypeScript, NestJS, PostgreSQL, and Kubernetes systems.',
-    skillsCsv: 'TypeScript, NestJS, Next.js, PostgreSQL, Prisma, Redis, Docker, Kubernetes',
-  });
+  const createJob = useCreateJob();
+  const orgCandidates = useCandidatesList({}).data?.data ?? [];
+  const orgJobs = useJobsList({}).data?.data ?? [];
 
-  // 2. Candidate Matcher State
-  const [selectedJobId, setSelectedJobId] = useState(orgJobs[0]?.id ?? '');
-  const [selectedCandidateId, setSelectedCandidateId] = useState(orgCandidates[0]?.id ?? '');
-  const matchEvaluation = computeAIMatchForPair(selectedJobId, selectedCandidateId);
+  // 1. Resume Parser
+  const [resumeRawText, setResumeRawText] = useState('');
+  const [activeResumeId, setActiveResumeId] = useState<string | null>(null);
+  const [parsedStaging, setParsedStaging] = useState<EditableParsedResume | null>(null);
+  const parseResumeMutation = useParseResume();
+  const resumeStatusQuery = useResumeParseStatus(activeResumeId, true);
+  const approveResumeMutation = useApproveParsedResume();
 
-  // 3. Job Generator State
-  const [jdTitle, setJdTitle] = useState('Staff AI Platform Engineer');
-  const [jdDept, setJdDept] = useState('AI & Core Infrastructure');
-  const [jdTone, setJdTone] = useState('Executive & High-Impact');
-  const [jdSkills, setJdSkills] = useState('TypeScript, NestJS, Next.js, PostgreSQL, OpenAI, Gemini');
-  const [generatedJd, setGeneratedJd] = useState(
-    `We are seeking a Staff AI Platform Engineer to architect provider-independent LLM workflows, high-throughput NestJS microservices, and multi-tenant enterprise SaaS capabilities.\n\nKey Responsibilities:\n• Design resilient AI orchestration across OpenAI, Gemini, and Anthropic\n• Scale PostgreSQL and Prisma data pipelines with strict tenant isolation\n• Partner with product leadership to ship explainable hiring intelligence`,
-  );
+  const resumeData = resumeStatusQuery.data ?? parseResumeMutation.data;
+  const resumeIsProcessing =
+    parseResumeMutation.isPending || resumeData?.parseStatus === 'PROCESSING';
 
-  // 4. Interview Assistant State
-  const [intRole, setIntRole] = useState('Principal Full-Stack Engineer');
-  const [questionsList] = useState([
-    {
-      category: 'TECHNICAL',
-      question:
-        'How do you enforce multi-tenant data isolation in a NestJS + Prisma + PostgreSQL architecture?',
-      criteria: 'Look for guard-level resolution of organizationId and composite database indexes.',
-    },
-    {
-      category: 'PROBLEM_SOLVING',
-      question:
-        'How would you design a provider-agnostic AI resume parser that handles malformed JSON responses and rate limits?',
-      criteria: 'Look for Zod schema validation, retry backoff, BullMQ queues, and human review staging.',
-    },
-    {
-      category: 'BEHAVIORAL',
-      question:
-        'Describe a complex architectural trade-off you led where security and developer velocity were in tension.',
-      criteria: 'Clear communication, pragmatic security controls, and measurable outcome.',
-    },
-  ]);
+  React.useEffect(() => {
+    if (resumeData?.extractedData && resumeData.parseStatus === 'PENDING_REVIEW' && !parsedStaging) {
+      setParsedStaging(toEditable(resumeData.extractedData));
+    }
+  }, [resumeData, parsedStaging]);
 
-  // 5. Email Assistant State
-  const [emailPurpose, setEmailPurpose] = useState('INTERVIEW_INVITE');
-  const [emailSubject, setEmailSubject] = useState(
-    `Interview Invitation: Principal Engineer Role at ${activeOrganization.name}`,
-  );
-  const [emailBody, setEmailBody] = useState(
-    `Hi Sophia,\n\nThank you for your application to ${activeOrganization.name}. Our engineering panel was impressed by your distributed systems background and would love to invite you to a 60-minute Technical Architecture interview.\n\nPlease let us know your availability this week.\n\nBest regards,\nTalent Acquisition Team\n${activeOrganization.name}`,
-  );
+  const handleExtractResume = () => {
+    if (resumeRawText.trim().length < 20) {
+      pushToast('Resume text too short', 'Paste at least a few lines of resume content.', 'error');
+      return;
+    }
+    setParsedStaging(null);
+    parseResumeMutation.mutate(
+      {
+        fileName: 'pasted-resume.txt',
+        mimeType: 'text/plain',
+        fileSizeBytes: resumeRawText.length,
+        rawText: resumeRawText,
+      },
+      {
+        onSuccess: (data) => {
+          setActiveResumeId(data.resumeId);
+          if (data.extractedData) setParsedStaging(toEditable(data.extractedData));
+        },
+      },
+    );
+  };
 
-  const handleApproveParsedResume = async (e: React.FormEvent) => {
+  const handleApproveParsedResume = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!parsedStaging) return;
-    await createCandidate({
-      firstName: parsedStaging.firstName,
-      lastName: parsedStaging.lastName,
-      email: parsedStaging.email,
-      phone: parsedStaging.phone,
-      location: parsedStaging.location,
-      currentTitle: parsedStaging.currentTitle,
-      currentCompany: parsedStaging.currentCompany,
-      totalExperienceYears: parsedStaging.totalExperienceYears,
-      summary: parsedStaging.summary,
-      source: 'AI_RESUME_IMPORT',
-      salaryCurrency: 'USD',
-      tags: ['AI Parsed', 'Verified'],
-      languages: ['English'],
-      skills: parsedStaging.skillsCsv
+    if (!parsedStaging || !activeResumeId) return;
+    const { skillsCsv, ...rest } = parsedStaging;
+    const approvedData: ParsedResumeData = {
+      ...rest,
+      skills: skillsCsv
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
-        .map((name) => ({ name, proficiency: 'Advanced', yearsOfExperience: 5 })),
-      experiences: [
-        {
-          company: parsedStaging.currentCompany,
-          title: parsedStaging.currentTitle,
-          isCurrent: true,
-          description: parsedStaging.summary,
+        .map((name) => ({ name })),
+    };
+    approveResumeMutation.mutate(
+      { resumeId: activeResumeId, approvedData },
+      {
+        onSuccess: () => {
+          pushToast('Candidate saved', `${approvedData.fullName} added to the talent pool.`, 'success');
+          setParsedStaging(null);
+          setActiveResumeId(null);
+          setResumeRawText('');
         },
-      ],
-      educations: [],
-      certifications: [],
-    });
+        onError: (error) => {
+          pushToast('Failed to save candidate', error instanceof Error ? error.message : 'Unknown error', 'error');
+        },
+      },
+    );
   };
+
+  // 2. Candidate Matcher
+  const [selectedJobId, setSelectedJobId] = useState('');
+  const [selectedCandidateId, setSelectedCandidateId] = useState('');
+  React.useEffect(() => {
+    if (!selectedJobId && orgJobs[0]) setSelectedJobId(orgJobs[0].id);
+  }, [orgJobs, selectedJobId]);
+  React.useEffect(() => {
+    if (!selectedCandidateId && orgCandidates[0]) setSelectedCandidateId(orgCandidates[0].id);
+  }, [orgCandidates, selectedCandidateId]);
+  const matchMutation = useMatchCandidate();
+
+  // 3. Job Generator
+  const [jdTitle, setJdTitle] = useState('');
+  const [jdDept, setJdDept] = useState('');
+  const [jdTone, setJdTone] = useState('Professional & Engaging');
+  const [jdExperienceLevel, setJdExperienceLevel] = useState('SENIOR');
+  const [jdSkills, setJdSkills] = useState('');
+  const jobDescriptionMutation = useGenerateJobDescription();
+  const [editableJdDescription, setEditableJdDescription] = useState('');
+
+  // 4. Interview Assistant
+  const [intRole, setIntRole] = useState('');
+  const [intExperienceLevel, setIntExperienceLevel] = useState('SENIOR');
+  const [intSkills, setIntSkills] = useState('');
+  const interviewQuestionsMutation = useGenerateInterviewQuestions();
+
+  // 5. Email Assistant
+  const [emailPurpose, setEmailPurpose] = useState<
+    'INTERVIEW_INVITE' | 'STATUS_UPDATE' | 'FOLLOW_UP' | 'OFFER' | 'REJECTION'
+  >('INTERVIEW_INVITE');
+  const [emailCandidateName, setEmailCandidateName] = useState('');
+  const [emailJobTitle, setEmailJobTitle] = useState('');
+  const emailMutation = useGenerateEmailDraft();
+  const [editableEmailSubject, setEditableEmailSubject] = useState('');
+  const [editableEmailBody, setEditableEmailBody] = useState('');
+
+  // 6. Candidate Summary
+  const [summaryCandidateId, setSummaryCandidateId] = useState('');
+  const summaryMutation = useGenerateCandidateSummary();
+  React.useEffect(() => {
+    if (!summaryCandidateId && orgCandidates[0]) setSummaryCandidateId(orgCandidates[0].id);
+  }, [orgCandidates, summaryCandidateId]);
 
   return (
     <div className="space-y-6">
@@ -158,21 +207,25 @@ export default function AIStudioPage() {
           <Sparkles className="h-4 w-4 text-indigo-600" />
           Active Provider:{' '}
           <span className="font-semibold">
-            {activeProvider
-              ? `${activeProvider.displayName} (${activeProvider.modelName})`
-              : 'Unconfigured (Configure in Super Admin)'}
+            {providerStatus?.isConfigured
+              ? `${providerStatus.activeProvider} (${providerStatus.activeModel})`
+              : 'Not configured'}
           </span>
         </div>
       </div>
 
-      {!activeProvider && (
+      {providerStatus && !providerStatus.isConfigured && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="text-xs text-amber-900">
             <p className="font-semibold">No AI Provider API Key Configured</p>
             <p className="mt-0.5">
-              Configure your OpenAI, Google Gemini, or Anthropic API key in{' '}
-              <span className="font-semibold">Super Admin Console → AI Providers</span> or `.env` to enable live external LLM calls.
+              AI features below will return a clean error until a provider is configured. Add your OpenAI,
+              Google Gemini, or Anthropic API key in{' '}
+              <Link href="/settings" className="font-semibold underline inline-flex items-center gap-1">
+                Settings <SettingsIcon className="h-3 w-3" />
+              </Link>
+              .
             </p>
           </div>
         </div>
@@ -186,6 +239,7 @@ export default function AIStudioPage() {
           { id: 'JOB_GENERATOR', label: '3. AI Job Description Generator', icon: FileText },
           { id: 'INTERVIEW_ASSIST', label: '4. AI Interview Assistant', icon: MessageSquare },
           { id: 'EMAIL_ASSIST', label: '5. AI Email Assistant', icon: Mail },
+          { id: 'CANDIDATE_SUMMARY', label: '6. AI Candidate Summary', icon: UserSquare2 },
         ].map((tab) => {
           const Icon = tab.icon;
           return (
@@ -211,31 +265,29 @@ export default function AIStudioPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
             <h2 className="text-base font-semibold text-slate-900">
-              Step 1: Upload PDF/DOCX or Paste Resume Text
+              Step 1: Paste Resume Text
             </h2>
             <textarea
               rows={11}
               value={resumeRawText}
               onChange={(e) => setResumeRawText(e.target.value)}
+              placeholder="Paste the candidate's resume text here..."
               className="w-full rounded-lg border border-slate-300 p-3 font-mono text-xs text-slate-800"
             />
             <button
               type="button"
-              onClick={() =>
-                pushToast(
-                  'Resume extracted into PENDING_REVIEW',
-                  'Verify extracted fields on the right before saving.',
-                  'info',
-                )
-              }
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+              onClick={handleExtractResume}
+              disabled={resumeIsProcessing}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
             >
-              <Sparkles className="h-4 w-4" />
-              Extract Structured Profile
+              {resumeIsProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {resumeIsProcessing ? 'Extracting…' : 'Extract Structured Profile'}
             </button>
+            {parseResumeMutation.isError && <AIErrorNotice error={parseResumeMutation.error} />}
+            {resumeStatusQuery.data?.parseError && <AIErrorNotice error={new Error(resumeStatusQuery.data.parseError)} />}
           </div>
 
-          {parsedStaging && (
+          {parsedStaging ? (
             <form
               onSubmit={handleApproveParsedResume}
               className="rounded-xl border border-slate-200 bg-white p-5 space-y-4"
@@ -254,9 +306,7 @@ export default function AIStudioPage() {
                   <input
                     type="text"
                     value={parsedStaging.firstName}
-                    onChange={(e) =>
-                      setParsedStaging({ ...parsedStaging, firstName: e.target.value })
-                    }
+                    onChange={(e) => setParsedStaging({ ...parsedStaging, firstName: e.target.value })}
                     className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                   />
                 </div>
@@ -265,9 +315,7 @@ export default function AIStudioPage() {
                   <input
                     type="text"
                     value={parsedStaging.lastName}
-                    onChange={(e) =>
-                      setParsedStaging({ ...parsedStaging, lastName: e.target.value })
-                    }
+                    onChange={(e) => setParsedStaging({ ...parsedStaging, lastName: e.target.value })}
                     className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                   />
                 </div>
@@ -283,15 +331,11 @@ export default function AIStudioPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
-                    Current Title
-                  </label>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Current Title</label>
                   <input
                     type="text"
-                    value={parsedStaging.currentTitle}
-                    onChange={(e) =>
-                      setParsedStaging({ ...parsedStaging, currentTitle: e.target.value })
-                    }
+                    value={parsedStaging.currentTitle ?? ''}
+                    onChange={(e) => setParsedStaging({ ...parsedStaging, currentTitle: e.target.value })}
                     className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                   />
                 </div>
@@ -303,9 +347,7 @@ export default function AIStudioPage() {
                 <input
                   type="text"
                   value={parsedStaging.skillsCsv}
-                  onChange={(e) =>
-                    setParsedStaging({ ...parsedStaging, skillsCsv: e.target.value })
-                  }
+                  onChange={(e) => setParsedStaging({ ...parsedStaging, skillsCsv: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                 />
               </div>
@@ -320,12 +362,23 @@ export default function AIStudioPage() {
               </div>
               <button
                 type="submit"
-                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                disabled={approveResumeMutation.isPending}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                <CheckCircle2 className="h-4 w-4" />
+                {approveResumeMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
                 Approve & Save Candidate to Talent Pool
               </button>
             </form>
+          ) : (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 flex items-center justify-center text-sm text-slate-500">
+              {resumeIsProcessing
+                ? 'AI extraction in progress…'
+                : 'Extracted profile will appear here for review once parsed.'}
+            </div>
           )}
         </div>
       )}
@@ -368,73 +421,89 @@ export default function AIStudioPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-              <p className="text-xs font-medium text-indigo-700">Overall Match Score</p>
-              <p className="text-3xl font-bold text-indigo-900 mt-1">
-                {matchEvaluation.overallScore}%
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-600">Skills Alignment</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">
-                {matchEvaluation.skillsScore}%
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-600">Experience Alignment</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">
-                {matchEvaluation.experienceScore}%
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-600">Education Alignment</p>
-              <p className="text-2xl font-semibold text-slate-900 mt-1">
-                {matchEvaluation.educationScore}%
-              </p>
-            </div>
-          </div>
+          <button
+            type="button"
+            disabled={!selectedJobId || !selectedCandidateId || matchMutation.isPending}
+            onClick={() => matchMutation.mutate({ jobId: selectedJobId, candidateId: selectedCandidateId })}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {matchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
+            {matchMutation.isPending ? 'Evaluating…' : 'Run Deep AI Match Analysis'}
+          </button>
 
-          <div className="space-y-3 text-sm">
-            <p className="font-semibold text-slate-900">Explainable AI Reasoning</p>
-            <p className="text-slate-700 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
-              {matchEvaluation.explanation}
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3.5">
-                <p className="text-xs font-semibold text-emerald-800 uppercase">Matching Skills</p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {matchEvaluation.matchingSkills.map((s) => (
-                    <span
-                      key={s}
-                      className="rounded bg-white px-2 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200"
-                    >
-                      {s}
-                    </span>
-                  ))}
+          {matchMutation.isError && <AIErrorNotice error={matchMutation.error} />}
+
+          {matchMutation.data && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                  <p className="text-xs font-medium text-indigo-700">Overall Match Score</p>
+                  <p className="text-3xl font-bold text-indigo-900 mt-1">
+                    {matchMutation.data.overallScore}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-600">Skills Alignment</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-1">
+                    {matchMutation.data.skillsScore}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-600">Experience Alignment</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-1">
+                    {matchMutation.data.experienceScore}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-600">Education Alignment</p>
+                  <p className="text-2xl font-semibold text-slate-900 mt-1">
+                    {matchMutation.data.educationScore}%
+                  </p>
                 </div>
               </div>
-              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3.5">
-                <p className="text-xs font-semibold text-amber-800 uppercase">
-                  Missing / Probe Skills
+
+              <div className="space-y-3 text-sm">
+                <p className="font-semibold text-slate-900">Explainable AI Reasoning</p>
+                <p className="text-slate-700 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+                  {matchMutation.data.explanation}
                 </p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {matchEvaluation.missingSkills.length > 0 ? (
-                    matchEvaluation.missingSkills.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded bg-white px-2 py-0.5 text-xs font-medium text-amber-700 border border-amber-200"
-                      >
-                        {s}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-slate-600">All required skills matched!</span>
-                  )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3.5">
+                    <p className="text-xs font-semibold text-emerald-800 uppercase">Matching Skills</p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {matchMutation.data.matchingSkills.map((s) => (
+                        <span
+                          key={s}
+                          className="rounded bg-white px-2 py-0.5 text-xs font-medium text-emerald-700 border border-emerald-200"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3.5">
+                    <p className="text-xs font-semibold text-amber-800 uppercase">
+                      Missing / Probe Skills
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {matchMutation.data.missingSkills.length > 0 ? (
+                        matchMutation.data.missingSkills.map((s) => (
+                          <span
+                            key={s}
+                            className="rounded bg-white px-2 py-0.5 text-xs font-medium text-amber-700 border border-amber-200"
+                          >
+                            {s}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-600">All required skills matched!</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -448,6 +517,7 @@ export default function AIStudioPage() {
                 type="text"
                 value={jdTitle}
                 onChange={(e) => setJdTitle(e.target.value)}
+                placeholder="e.g. Staff AI Platform Engineer"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
@@ -457,6 +527,7 @@ export default function AIStudioPage() {
                 type="text"
                 value={jdDept}
                 onChange={(e) => setJdDept(e.target.value)}
+                placeholder="e.g. Engineering"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
@@ -471,91 +542,180 @@ export default function AIStudioPage() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Editable Generated Job Description
-            </label>
-            <textarea
-              rows={8}
-              value={generatedJd}
-              onChange={(e) => setGeneratedJd(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 p-3 text-sm"
+            <label className="block text-xs font-medium text-slate-700 mb-1">Required Skills (Comma-Separated)</label>
+            <input
+              type="text"
+              value={jdSkills}
+              onChange={(e) => setJdSkills(e.target.value)}
+              placeholder="e.g. TypeScript, NestJS, PostgreSQL"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
           <button
             type="button"
+            disabled={!jdTitle || !jdDept || jobDescriptionMutation.isPending}
             onClick={() =>
-              createJob({
-                title: jdTitle,
-                department: jdDept,
-                location: 'Remote / Hybrid',
-                workLocationType: 'HYBRID',
-                employmentType: 'FULL_TIME',
-                experienceLevel: 'SENIOR',
-                minExperienceYears: 5,
-                salaryMin: 170000,
-                salaryMax: 210000,
-                salaryCurrency: 'USD',
-                showSalary: true,
-                description: generatedJd,
-                responsibilities: ['Architect scalable systems', 'Collaborate across product teams'],
-                qualifications: ['5+ years production engineering experience'],
-                benefits: ['Competitive salary & equity', 'Comprehensive healthcare'],
-                requiredSkills: jdSkills.split(',').map((s) => s.trim()),
-                preferredSkills: [],
-                openingsCount: 1,
-                status: 'PUBLISHED',
-                hiringManagerName: 'Marcus Vance',
-                aiGenerated: true,
-              })
+              jobDescriptionMutation.mutate(
+                {
+                  title: jdTitle,
+                  department: jdDept,
+                  experienceLevel: jdExperienceLevel,
+                  tone: jdTone,
+                  requiredSkills: jdSkills.split(',').map((s) => s.trim()).filter(Boolean),
+                },
+                { onSuccess: (data) => setEditableJdDescription(data.description) },
+              )
             }
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            Save & Publish Generated Job Requisition
+            {jobDescriptionMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {jobDescriptionMutation.isPending ? 'Generating…' : 'Generate with AI'}
           </button>
+
+          {jobDescriptionMutation.isError && <AIErrorNotice error={jobDescriptionMutation.error} />}
+
+          {jobDescriptionMutation.data && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  AI-Generated Description (editable before publishing)
+                </label>
+                <textarea
+                  rows={8}
+                  value={editableJdDescription}
+                  onChange={(e) => setEditableJdDescription(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 p-3 text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const generated = jobDescriptionMutation.data;
+                  if (!generated) return;
+                  await createJob.mutateAsync({
+                    title: generated.title || jdTitle,
+                    department: jdDept,
+                    location: 'Remote / Hybrid',
+                    workLocationType: 'HYBRID',
+                    employmentType: 'FULL_TIME',
+                    experienceLevel: jdExperienceLevel,
+                    minExperienceYears: 5,
+                    salaryCurrency: 'USD',
+                    showSalary: false,
+                    description: editableJdDescription,
+                    responsibilities: generated.responsibilities,
+                    qualifications: generated.qualifications,
+                    benefits: generated.benefits,
+                    requiredSkills: generated.requiredSkills,
+                    preferredSkills: generated.preferredSkills,
+                    openingsCount: 1,
+                    status: 'DRAFT',
+                    aiGenerated: true,
+                  });
+                  pushToast('Job requisition saved', `${generated.title} saved as draft.`, 'success');
+                }}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+              >
+                Save as Draft Job Requisition
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {/* TAB 4: INTERVIEW ASSISTANT */}
       {activeTab === 'INTERVIEW_ASSIST' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900">
-              Role-Specific Interview Questions & Evaluation Rubric ({intRole})
-            </h2>
-            <input
-              type="text"
-              value={intRole}
-              onChange={(e) => setIntRole(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Job Title / Role</label>
+              <input
+                type="text"
+                value={intRole}
+                onChange={(e) => setIntRole(e.target.value)}
+                placeholder="e.g. Principal Full-Stack Engineer"
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Experience Level</label>
+              <select
+                value={intExperienceLevel}
+                onChange={(e) => setIntExperienceLevel(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              >
+                {['ENTRY', 'JUNIOR', 'MID', 'SENIOR', 'LEAD', 'EXECUTIVE'].map((lvl) => (
+                  <option key={lvl} value={lvl}>
+                    {lvl}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Key Skills (Comma-Separated)</label>
+              <input
+                type="text"
+                value={intSkills}
+                onChange={(e) => setIntSkills(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              />
+            </div>
           </div>
-          <div className="space-y-3">
-            {questionsList.map((q, i) => (
-              <div key={i} className="rounded-lg border border-slate-200 p-4 bg-slate-50">
-                <span className="inline-block rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-200">
-                  {q.category}
-                </span>
-                <p className="text-sm font-semibold text-slate-900 mt-2">{q.question}</p>
-                <p className="text-xs text-slate-600 mt-1">
-                  <span className="font-semibold">Evaluation Rubric:</span> {q.criteria}
-                </p>
-              </div>
-            ))}
-          </div>
+          <button
+            type="button"
+            disabled={!intRole || interviewQuestionsMutation.isPending}
+            onClick={() =>
+              interviewQuestionsMutation.mutate({
+                jobTitle: intRole,
+                experienceLevel: intExperienceLevel,
+                skills: intSkills.split(',').map((s) => s.trim()).filter(Boolean),
+              })
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {interviewQuestionsMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            {interviewQuestionsMutation.isPending ? 'Generating…' : 'Generate Tailored Interview Guide'}
+          </button>
+
+          {interviewQuestionsMutation.isError && <AIErrorNotice error={interviewQuestionsMutation.error} />}
+
+          {interviewQuestionsMutation.data && (
+            <div className="space-y-3">
+              {interviewQuestionsMutation.data.questions.map((q, i) => (
+                <div key={i} className="rounded-lg border border-slate-200 p-4 bg-slate-50">
+                  <span className="inline-block rounded bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-200">
+                    {q.category}
+                  </span>
+                  <p className="text-sm font-semibold text-slate-900 mt-2">{q.question}</p>
+                  <p className="text-xs text-slate-600 mt-1">
+                    <span className="font-semibold">Evaluation Criteria:</span> {q.evaluationCriteria}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* TAB 5: EMAIL ASSISTANT */}
       {activeTab === 'EMAIL_ASSIST' && (
         <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">
                 Communication Type
               </label>
               <select
                 value={emailPurpose}
-                onChange={(e) => setEmailPurpose(e.target.value)}
+                onChange={(e) => setEmailPurpose(e.target.value as typeof emailPurpose)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               >
                 <option value="INTERVIEW_INVITE">Interview Invitation</option>
@@ -566,39 +726,148 @@ export default function AIStudioPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Email Subject</label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Candidate Name</label>
               <input
                 type="text"
-                value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
+                value={emailCandidateName}
+                onChange={(e) => setEmailCandidateName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Job Title</label>
+              <input
+                type="text"
+                value={emailJobTitle}
+                onChange={(e) => setEmailJobTitle(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
             </div>
           </div>
+          <button
+            type="button"
+            disabled={!emailCandidateName || !emailJobTitle || emailMutation.isPending}
+            onClick={() =>
+              emailMutation.mutate(
+                {
+                  purpose: emailPurpose,
+                  candidateName: emailCandidateName,
+                  jobTitle: emailJobTitle,
+                  companyName: activeOrganization.name,
+                },
+                {
+                  onSuccess: (data) => {
+                    setEditableEmailSubject(data.subject);
+                    setEditableEmailBody(data.body);
+                  },
+                },
+              )
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {emailMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {emailMutation.isPending ? 'Drafting…' : 'Generate Email Draft'}
+          </button>
+
+          {emailMutation.isError && <AIErrorNotice error={emailMutation.error} />}
+
+          {emailMutation.data && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Email Subject</label>
+                <input
+                  type="text"
+                  value={editableEmailSubject}
+                  onChange={(e) => setEditableEmailSubject(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Editable Email Draft (Human Review Required Before Sending)
+                </label>
+                <textarea
+                  rows={7}
+                  value={editableEmailBody}
+                  onChange={(e) => setEditableEmailBody(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 p-3 text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard?.writeText(`Subject: ${editableEmailSubject}\n\n${editableEmailBody}`);
+                  pushToast('Draft copied', 'Paste it into your email client to send.', 'success');
+                }}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+              >
+                Copy Draft to Clipboard
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* TAB 6: CANDIDATE SUMMARY */}
+      {activeTab === 'CANDIDATE_SUMMARY' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Editable Email Draft (Human Review Required Before Sending)
-            </label>
-            <textarea
-              rows={7}
-              value={emailBody}
-              onChange={(e) => setEmailBody(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 p-3 text-sm"
-            />
+            <label className="block text-xs font-medium text-slate-700 mb-1">Candidate</label>
+            <select
+              value={summaryCandidateId}
+              onChange={(e) => setSummaryCandidateId(e.target.value)}
+              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              {orgCandidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.fullName} — {c.currentTitle}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             type="button"
-            onClick={() =>
-              pushToast(
-                'Email approved & queued for delivery',
-                `Subject: ${emailSubject}`,
-                'success',
-              )
-            }
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+            disabled={!summaryCandidateId || summaryMutation.isPending}
+            onClick={() => summaryMutation.mutate({ candidateId: summaryCandidateId })}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            Approve & Send Communication
+            {summaryMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserSquare2 className="h-4 w-4" />}
+            {summaryMutation.isPending ? 'Summarizing…' : 'Generate Candidate Summary'}
           </button>
+
+          {summaryMutation.isError && <AIErrorNotice error={summaryMutation.error} />}
+
+          {summaryMutation.data && (
+            <div className="space-y-3 text-sm">
+              <div className="rounded-md bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-800 inline-block">
+                AI-generated — verify against the candidate profile before use
+              </div>
+              <p className="text-slate-700 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+                {summaryMutation.data.summary}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3.5">
+                  <p className="text-xs font-semibold text-emerald-800 uppercase">Key Strengths</p>
+                  <ul className="mt-2 space-y-1 text-xs text-emerald-900 list-disc pl-4">
+                    {summaryMutation.data.keyStrengths.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3.5">
+                  <p className="text-xs font-semibold text-amber-800 uppercase">Considerations</p>
+                  <ul className="mt-2 space-y-1 text-xs text-amber-900 list-disc pl-4">
+                    {summaryMutation.data.considerations.map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                Based on verified profile fields: {summaryMutation.data.basedOnFields.join(', ')}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

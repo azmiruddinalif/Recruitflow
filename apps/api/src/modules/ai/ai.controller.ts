@@ -13,6 +13,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { AuthGuard } from '../auth/auth.guard';
 import { AIFactory } from './ai.factory';
 import { CandidateMatchingService } from './modules/candidate-matching/candidate-matching.service';
+import { CandidateSummaryService } from './modules/candidate-summary/candidate-summary.service';
 import { EmailAssistantService } from './modules/email-assistant/email-assistant.service';
 import { InterviewAssistantService } from './modules/interview-assistant/interview-assistant.service';
 import { JobDescriptionService } from './modules/job-description/job-description.service';
@@ -29,6 +30,7 @@ export class AIController {
     private readonly jobDescription: JobDescriptionService,
     private readonly interviewAssistant: InterviewAssistantService,
     private readonly emailAssistant: EmailAssistantService,
+    private readonly candidateSummary: CandidateSummaryService,
   ) {}
 
   @Get('status')
@@ -57,6 +59,16 @@ export class AIController {
       userId: user.id,
       ...body,
     });
+  }
+
+  @Get('parse-resume/:resumeId')
+  @RequirePermissions('ai.resume_parse')
+  @ApiOperation({ summary: 'Poll the status of a resume parse job (queued or synchronous)' })
+  async getResumeParseStatus(
+    @CurrentOrg() org: AuthenticatedOrganizationContext,
+    @Param('resumeId') resumeId: string,
+  ) {
+    return this.resumeParser.getResumeStatus(org.organizationId, resumeId);
   }
 
   @Post('parse-resume/:resumeId/approve')
@@ -173,6 +185,21 @@ export class AIController {
       userId: user.id,
       companyName: body.companyName || org.organizationName,
       ...body,
+    });
+  }
+
+  @Post('candidate-summary')
+  @RequirePermissions('ai.candidate_summary')
+  @ApiOperation({ summary: 'Generate a concise AI summary from verified candidate profile data' })
+  async generateCandidateSummary(
+    @CurrentOrg() org: AuthenticatedOrganizationContext,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { candidateId: string },
+  ) {
+    return this.candidateSummary.generateCandidateSummary({
+      organizationId: org.organizationId,
+      userId: user.id,
+      candidateId: body.candidateId,
     });
   }
 }

@@ -374,3 +374,34 @@ export const aiEmailDraftOutputSchema = z.object({
   placeholders: z.array(z.string()),
 });
 
+export const aiCandidateSummaryOutputSchema = z.object({
+  summary: z.string(),
+  keyStrengths: z.array(z.string()),
+  considerations: z.array(z.string()),
+  basedOnFields: z.array(z.string()),
+});
+
+export const updateSubscriptionPlanSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().min(1).max(2000).optional(),
+  priceMonthlyCents: z.number().int().min(0).optional(),
+  priceYearlyCents: z.number().int().min(0).optional(),
+  maxJobs: z.number().int().min(1).optional(),
+  maxCandidates: z.number().int().min(1).optional(),
+  maxMembers: z.number().int().min(1).optional(),
+  aiCreditsMonthly: z.number().int().min(0).optional(),
+  features: z.array(z.string().min(1).max(200)).optional(),
+  isPublic: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+export const upsertAIProviderSchema = z.object({
+  provider: z.enum(['OPENAI', 'GEMINI', 'ANTHROPIC']),
+  displayName: z.string().min(1).max(80),
+  apiKey: z.string().min(1).max(500).optional(),
+  defaultModel: z.string().min(1).max(80),
+  isEnabled: z.boolean(),
+  isDefault: z.boolean().optional(),
+});
+

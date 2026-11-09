@@ -213,7 +213,8 @@ describe('AIFactory & ResumeParser — Comprehensive AI Failure & Validation Sui
 
   it('7. rejects malformed or empty resume text before invoking AI provider', async () => {
     const { mockPrisma } = createMockDependencies();
-    const parser = new ResumeParserService(mockPrisma as never, {} as never);
+    const noopQueue = { enqueueResumeParse: vi.fn().mockResolvedValue(false) };
+    const parser = new ResumeParserService(mockPrisma as never, {} as never, noopQueue as never);
 
     await expect(
       parser.parseResumeText({
@@ -248,7 +249,8 @@ describe('AIFactory & ResumeParser — Comprehensive AI Failure & Validation Sui
       }),
     };
 
-    const parser = new ResumeParserService(mockPrisma as never, mockFactory as never);
+    const noopQueue = { enqueueResumeParse: vi.fn().mockResolvedValue(false) };
+    const parser = new ResumeParserService(mockPrisma as never, mockFactory as never, noopQueue as never);
     const hugeText = 'Senior Software Engineer Resume Content. '.repeat(1200); // ~48,000 chars
 
     const res = await parser.parseResumeText({

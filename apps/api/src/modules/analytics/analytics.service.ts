@@ -131,6 +131,8 @@ export class AnalyticsService {
       }),
     ]);
 
+    const hiringTrends = await this.getMonthlyHiringTrends(organizationId);
+
     const funnel = APPLICATION_PIPELINE_STAGES.map((stage) => {
       const found = stageGroupings.find((g) => g.status === stage.status);
       const count = found?._count._all ?? 0;
@@ -140,14 +142,6 @@ export class AnalyticsService {
         percentage: totalApplications > 0 ? Math.round((count / totalApplications) * 100) : 0,
       };
     });
-
-    const months = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'];
-    const hiringTrends = months.map((month, idx) => ({
-      month,
-      applications: Math.max(1, Math.round(((totalApplications || 1) / 6) * (0.7 + idx * 0.12))),
-      interviews: Math.max(1, Math.round(((scheduledInterviews || 1) + 2) * (0.5 + idx * 0.1))),
-      hired: Math.max(0, Math.round(((hiredCandidates || 0) + 1) * (0.4 + idx * 0.12))),
-    }));
 
     return {
       totalCandidates,
@@ -174,6 +168,51 @@ export class AnalyticsService {
         createdAt: log.createdAt.toISOString(),
       })),
     };
+  }
+
+  private async getMonthlyHiringTrends(organizationId: string) {
+    const now = new Date();
+    const months: Array<{ key: string; label: string; start: Date; end: Date }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+      months.push({
+        key: `${start.getFullYear()}-${start.getMonth()}`,
+        label: start.toLocaleString('en-US', { month: 'short' }),
+        start,
+        end,
+      });
+    }
+    const windowStart = months[0].start;
+    const windowEnd = months[months.length - 1].end;
+
+    const [applications, interviews, hires] = await Promise.all([
+      this.prisma.jobApplication.findMany({
+        where: { organizationId, deletedAt: null, appliedAt: { gte: windowStart, lt: windowEnd } },
+        select: { appliedAt: true },
+      }),
+      this.prisma.interview.findMany({
+        where: { organizationId, scheduledAt: { gte: windowStart, lt: windowEnd } },
+        select: { scheduledAt: true },
+      }),
+      this.prisma.jobApplication.findMany({
+        where: {
+          organizationId,
+          status: 'HIRED',
+          hiredAt: { gte: windowStart, lt: windowEnd },
+        },
+        select: { hiredAt: true },
+      }),
+    ]);
+
+    const monthKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}`;
+
+    return months.map(({ key, label }) => ({
+      month: label,
+      applications: applications.filter((a) => monthKey(a.appliedAt) === key).length,
+      interviews: interviews.filter((i) => monthKey(i.scheduledAt) === key).length,
+      hired: hires.filter((h) => h.hiredAt && monthKey(h.hiredAt) === key).length,
+    }));
   }
 
   async getDetailedReports(organizationId: string) {
