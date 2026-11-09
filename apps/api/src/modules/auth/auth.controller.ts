@@ -38,18 +38,28 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   private setSessionCookie(res: Response, token: string, expiresAt: Date): void {
+    const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('better-auth.session_token', token, {
       httpOnly: true,
       path: '/',
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // The web app and API are deployed on different registrable domains in
+      // production (Vercel + Render), making every request cross-site. A
+      // SameSite=Lax cookie is never attached to cross-site fetch/XHR calls,
+      // so the browser silently drops it on every authenticated request
+      // after login, resulting in 401s everywhere. SameSite=None (which
+      // requires Secure) is the correct setting for this topology; Lax is
+      // kept for local dev where web and API share the "localhost" site.
+      sameSite: isProduction ? 'none' : 'lax',
+      secure: isProduction,
       expires: expiresAt,
     });
   }
 
   private clearSessionCookie(res: Response): void {
-    res.clearCookie('better-auth.session_token', { path: '/' });
-    res.clearCookie('rf_session_token', { path: '/' });
+    const isProduction = process.env.NODE_ENV === 'production';
+    const options = { path: '/', sameSite: isProduction ? 'none' : 'lax', secure: isProduction } as const;
+    res.clearCookie('better-auth.session_token', options);
+    res.clearCookie('rf_session_token', options);
   }
 
   @Public()
