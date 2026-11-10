@@ -34,7 +34,7 @@ import { KanbanBoard } from '@/components/applications/kanban-board';
 import { formatCurrency } from '@/lib/utils';
 
 export default function ApplicationsPipelinePage() {
-  const { pushToast } = useRecruitFlow();
+  const { can, pushToast } = useRecruitFlow();
 
   const [viewMode, setViewMode] = React.useState<'KANBAN' | 'TABLE'>('KANBAN');
   const [jobFilter, setJobFilter] = React.useState<string>('ALL');
@@ -236,10 +236,12 @@ export default function ApplicationsPipelinePage() {
             </button>
           </div>
 
-          <Button onClick={() => setShowApplyModal(true)}>
-            <Plus className="h-4 w-4" />
-            <span>Apply Candidate to Job</span>
-          </Button>
+          {can('applications.create') && (
+            <Button onClick={() => setShowApplyModal(true)}>
+              <Plus className="h-4 w-4" />
+              <span>Apply Candidate to Job</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -278,6 +280,7 @@ export default function ApplicationsPipelinePage() {
             applications={applications}
             candidates={candidatesLite}
             jobs={jobsLite}
+            canEdit={can('applications.update')}
             onInspectMatch={handleInspectOrRunMatch}
             onReorder={handleReorder}
             onMoveStage={handleMoveStage}
@@ -327,7 +330,8 @@ export default function ApplicationsPipelinePage() {
                       <select
                         value={app.status}
                         onChange={(e) => handleMoveStage(app.id, e.target.value as ApplicationStatus)}
-                        className="h-8 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 text-xs font-medium text-slate-800"
+                        disabled={!can('applications.update')}
+                        className="h-8 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 text-xs font-medium text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {APPLICATION_PIPELINE_STAGES.map((s) => (
                           <option key={s.status} value={s.status}>

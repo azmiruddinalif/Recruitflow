@@ -35,7 +35,7 @@ import { AIMatchBadge } from '@/components/shared/ai-match-badge';
 import { formatCurrency, formatDate, getApplicationStageStyle, getInitials } from '@/lib/utils';
 
 export default function CandidatesPage() {
-  const { pushToast } = useRecruitFlow();
+  const { can, pushToast } = useRecruitFlow();
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -222,17 +222,21 @@ export default function CandidatesPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Link
-            href="/ai-studio"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-[#EEF2FF] px-3.5 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            <span>AI Resume Parser</span>
-          </Link>
-          <Button onClick={() => setShowAddModal(true)}>
-            <Plus className="h-4 w-4" />
-            <span>Add Candidate</span>
-          </Button>
+          {can('ai.resume_parse') && (
+            <Link
+              href="/ai-studio"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-[#EEF2FF] px-3.5 text-xs font-semibold text-[#4F46E5] hover:bg-indigo-100"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>AI Resume Parser</span>
+            </Link>
+          )}
+          {can('candidates.create') && (
+            <Button onClick={() => setShowAddModal(true)}>
+              <Plus className="h-4 w-4" />
+              <span>Add Candidate</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -507,35 +511,37 @@ export default function CandidatesPage() {
             </div>
 
             {/* Quick Apply Candidate to Job */}
-            <div className="rounded-xl border border-indigo-200 bg-[#EEF2FF]/60 p-4">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                <div>
-                  <p className="font-semibold text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-[#4F46E5]" />
-                    <span>Apply Candidate to Job Requisition</span>
-                  </p>
-                  <p className="text-[11px] text-slate-600">
-                    Adds to the pipeline. Run AI Match on the Applications board for an explainable score.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={applyJobId}
-                    onChange={(e) => setApplyJobId(e.target.value)}
-                    className="h-8 rounded-lg border border-[#E2E8F0] bg-white px-2.5 text-xs text-slate-900"
-                  >
-                    {jobs.map((j) => (
-                      <option key={j.id} value={j.id}>
-                        {j.title}
-                      </option>
-                    ))}
-                  </select>
-                  <Button size="sm" onClick={handleApplyToJob} disabled={createApplication.isPending}>
-                    Apply
-                  </Button>
+            {can('applications.create') && (
+              <div className="rounded-xl border border-indigo-200 bg-[#EEF2FF]/60 p-4">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                  <div>
+                    <p className="font-semibold text-slate-900 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-[#4F46E5]" />
+                      <span>Apply Candidate to Job Requisition</span>
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Adds to the pipeline. Run AI Match on the Applications board for an explainable score.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={applyJobId}
+                      onChange={(e) => setApplyJobId(e.target.value)}
+                      className="h-8 rounded-lg border border-[#E2E8F0] bg-white px-2.5 text-xs text-slate-900"
+                    >
+                      {jobs.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.title}
+                        </option>
+                      ))}
+                    </select>
+                    <Button size="sm" onClick={handleApplyToJob} disabled={createApplication.isPending}>
+                      Apply
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Summary */}
             <div>
@@ -687,18 +693,20 @@ export default function CandidatesPage() {
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Recruiter &amp; Hiring Manager Notes ({liveSelectedCandidate.notes.length})
               </h3>
-              <form onSubmit={handleAddNote} className="mt-2 flex gap-2">
-                <input
-                  type="text"
-                  value={noteInput}
-                  onChange={(e) => setNoteInput(e.target.value)}
-                  placeholder="Add an internal evaluation note for the hiring team..."
-                  className="h-9 flex-1 rounded-lg border border-[#E2E8F0] px-3 text-xs focus:border-[#4F46E5] focus:outline-none"
-                />
-                <Button type="submit" size="sm" disabled={addNote.isPending}>
-                  Add Note
-                </Button>
-              </form>
+              {can('candidates.update') && (
+                <form onSubmit={handleAddNote} className="mt-2 flex gap-2">
+                  <input
+                    type="text"
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    placeholder="Add an internal evaluation note for the hiring team..."
+                    className="h-9 flex-1 rounded-lg border border-[#E2E8F0] px-3 text-xs focus:border-[#4F46E5] focus:outline-none"
+                  />
+                  <Button type="submit" size="sm" disabled={addNote.isPending}>
+                    Add Note
+                  </Button>
+                </form>
+              )}
               <div className="mt-3 space-y-2">
                 {liveSelectedCandidate.notes.map((n) => (
                   <div key={n.id} className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3">

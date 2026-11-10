@@ -4,9 +4,9 @@
   "private": true,
   "description": "RecruitFlow NestJS Modular Monolith API Server",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/src/main.js",
+    "dev": "node init && tsx watch src/main.ts",
+    "build": "node init && tsc -p tsconfig.json",
+    "start": "node init && node dist/src/main.js",
     "start:prod": "node dist/src/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

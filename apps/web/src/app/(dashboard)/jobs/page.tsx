@@ -20,7 +20,7 @@ import { Modal } from '@/components/ui/modal';
 import { formatSalaryRange, getJobStatusStyle } from '@/lib/utils';
 
 export default function JobsPage() {
-  const { pushToast } = useRecruitFlow();
+  const { can, pushToast } = useRecruitFlow();
 
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -152,10 +152,12 @@ export default function JobsPage() {
           </p>
         </div>
 
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="h-4 w-4" />
-          <span>Create Job Requisition</span>
-        </Button>
+        {can('jobs.create') && (
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4" />
+            <span>Create Job Requisition</span>
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -265,7 +267,8 @@ export default function JobsPage() {
                     aria-label="Job Status"
                     value={job.status}
                     onChange={(e) => handleUpdateStatus(job.id, e.target.value as JobStatus)}
-                    className="h-8 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-2 text-xs font-medium text-slate-700"
+                    disabled={!can('jobs.update')}
+                    className="h-8 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-2 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="PUBLISHED">Published</option>
                     <option value="DRAFT">Draft</option>

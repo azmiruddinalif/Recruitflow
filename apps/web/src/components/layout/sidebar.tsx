@@ -21,6 +21,7 @@ import {
   UserSquare2,
   X,
 } from 'lucide-react';
+import type { PermissionCode } from '@recruitflow/types';
 import { cn, formatRoleLabel } from '@/lib/utils';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
 import { useCurrentOrganization } from '@/features/organizations/use-organizations';
@@ -39,6 +40,7 @@ interface NavGroup {
     icon: React.ComponentType<{ className?: string }>;
     badge?: string | number;
     superAdminOnly?: boolean;
+    requiredPermission?: PermissionCode;
   }>;
 }
 
@@ -50,7 +52,7 @@ interface SidebarProps {
 export function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { organizations, activeOrganization, switchOrganization, currentUser } = useRecruitFlow();
+  const { organizations, activeOrganization, switchOrganization, currentUser, can } = useRecruitFlow();
   const signOut = useSignOut();
 
   const orgQuery = useCurrentOrganization();
@@ -92,7 +94,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       label: 'AI & Intelligence',
       items: [
         { name: 'AI Studio Hub', href: '/ai-studio', icon: Sparkles, badge: 'AI' },
-        { name: 'Analytics & Reports', href: '/analytics', icon: BarChart3 },
+        {
+          name: 'Analytics & Reports',
+          href: '/analytics',
+          icon: BarChart3,
+          requiredPermission: 'analytics.read',
+        },
       ],
     },
     {
@@ -105,7 +112,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           icon: Bell,
           badge: unreadCount > 0 ? unreadCount : undefined,
         },
-        { name: 'Billing & Plans', href: '/billing', icon: CreditCard },
+        {
+          name: 'Billing & Plans',
+          href: '/billing',
+          icon: CreditCard,
+          requiredPermission: 'billing.read',
+        },
         { name: 'Settings', href: '/settings', icon: Settings },
       ],
     },
@@ -196,7 +208,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
         {navGroups.map((group) => {
           const visibleItems = group.items.filter(
-            (item) => !item.superAdminOnly || currentUser.isSuperAdmin,
+            (item) =>
+              (!item.superAdminOnly || currentUser.isSuperAdmin) &&
+              (!item.requiredPermission || can(item.requiredPermission)),
           );
           if (visibleItems.length === 0) return null;
 

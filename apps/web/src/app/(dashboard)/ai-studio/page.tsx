@@ -15,7 +15,7 @@ import {
   UserSquare2,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { ParsedResumeData } from '@recruitflow/types';
+import type { ParsedResumeData, PermissionCode } from '@recruitflow/types';
 import { useRecruitFlow } from '@/stores/recruitflow-store';
 import {
   useAIProviderStatus,
@@ -63,17 +63,61 @@ function AIErrorNotice({ error }: { error: unknown }) {
   );
 }
 
-export default function AIStudioPage() {
-  const { activeOrganization, pushToast } = useRecruitFlow();
+type AIStudioTabId =
+  | 'RESUME_PARSER'
+  | 'CANDIDATE_MATCH'
+  | 'JOB_GENERATOR'
+  | 'INTERVIEW_ASSIST'
+  | 'EMAIL_ASSIST'
+  | 'CANDIDATE_SUMMARY';
 
-  const [activeTab, setActiveTab] = useState<
-    | 'RESUME_PARSER'
-    | 'CANDIDATE_MATCH'
-    | 'JOB_GENERATOR'
-    | 'INTERVIEW_ASSIST'
-    | 'EMAIL_ASSIST'
-    | 'CANDIDATE_SUMMARY'
-  >('RESUME_PARSER');
+const AI_STUDIO_TABS: ReadonlyArray<{
+  id: AIStudioTabId;
+  label: string;
+  icon: typeof Upload;
+  permission: PermissionCode;
+}> = [
+  { id: 'RESUME_PARSER', label: '1. AI Resume Parser', icon: Upload, permission: 'ai.resume_parse' },
+  {
+    id: 'CANDIDATE_MATCH',
+    label: '2. Explainable Candidate Matcher',
+    icon: Target,
+    permission: 'ai.candidate_match',
+  },
+  { id: 'JOB_GENERATOR', label: '3. AI Job Description Generator', icon: FileText, permission: 'ai.job_generate' },
+  {
+    id: 'INTERVIEW_ASSIST',
+    label: '4. AI Interview Assistant',
+    icon: MessageSquare,
+    permission: 'ai.interview_assist',
+  },
+  { id: 'EMAIL_ASSIST', label: '5. AI Email Assistant', icon: Mail, permission: 'ai.email_assist' },
+  {
+    id: 'CANDIDATE_SUMMARY',
+    label: '6. AI Candidate Summary',
+    icon: UserSquare2,
+    permission: 'ai.candidate_summary',
+  },
+];
+
+export default function AIStudioPage() {
+  const { activeOrganization, can, pushToast } = useRecruitFlow();
+
+  const visibleTabs = AI_STUDIO_TABS.filter((tab) => can(tab.permission));
+
+  const [activeTab, setActiveTab] = useState<AIStudioTabId>('RESUME_PARSER');
+
+  // Keep the active tab in sync with the role's permitted tool set: on first
+  // render (and whenever the active organization/role changes), fall back to
+  // the first tab this role can actually use instead of leaving a tool open
+  // that the user has no permission to run.
+  React.useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (!visibleTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleTabs.map((t) => t.id).join(',')]);
 
   const { data: providerStatus } = useAIProviderStatus();
 
@@ -232,33 +276,32 @@ export default function AIStudioPage() {
       )}
 
       {/* Navigation Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {[
-          { id: 'RESUME_PARSER', label: '1. AI Resume Parser', icon: Upload },
-          { id: 'CANDIDATE_MATCH', label: '2. Explainable Candidate Matcher', icon: Target },
-          { id: 'JOB_GENERATOR', label: '3. AI Job Description Generator', icon: FileText },
-          { id: 'INTERVIEW_ASSIST', label: '4. AI Interview Assistant', icon: MessageSquare },
-          { id: 'EMAIL_ASSIST', label: '5. AI Email Assistant', icon: Mail },
-          { id: 'CANDIDATE_SUMMARY', label: '6. AI Candidate Summary', icon: UserSquare2 },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
-                activeTab === tab.id
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      {visibleTabs.length > 0 ? (
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:text-slate-900'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-xs text-slate-500">
+          Your role does not have access to any AI Studio tools.
+        </div>
+      )}
 
       {/* TAB 1: RESUME PARSER */}
       {activeTab === 'RESUME_PARSER' && (

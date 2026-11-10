@@ -4,9 +4,9 @@
   "private": true,
   "description": "RecruitFlow Background Worker (BullMQ + Redis for AI Resume Parsing, Candidate Matching & Email Dispatch)",
   "scripts": {
-    "dev": "tsx watch src/worker.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/worker.js",
+    "dev": "node init && tsx watch src/worker.ts",
+    "build": "node init && tsc -p tsconfig.json",
+    "start": "node init && node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

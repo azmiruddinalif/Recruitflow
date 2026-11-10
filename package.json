@@ -2,7 +2,7 @@
   "name": "recruitflow",
   "version": "1.0.0",
   "private": true,
-  "description": "RecruitFlow — Premium AI-Powered Recruitment Management System & Applicant Tracking System (ATS)",
+  "description": "RecruitFlow \u2014 Premium AI-Powered Recruitment Management System & Applicant Tracking System (ATS)",
   "author": "RecruitFlow Engineering",
   "license": "Commercial",
   "packageManager": "pnpm@9.15.4",
@@ -14,11 +14,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n \"API,WEB,WORKER\" -c \"blue,magenta,cyan\" \"npm run dev --workspace=@recruitflow/api\" \"npm run dev --workspace=@recruitflow/web\" \"npm run dev --workspace=@recruitflow/worker\"",
+    "dev": "node init && concurrently -n \"API,WEB,WORKER\" -c \"blue,magenta,cyan\" \"npm run dev --workspace=@recruitflow/api\" \"npm run dev --workspace=@recruitflow/web\" \"npm run dev --workspace=@recruitflow/worker\"",
     "dev:web": "npm run dev --workspace=@recruitflow/web",
     "dev:api": "npm run dev --workspace=@recruitflow/api",
     "dev:worker": "npm run dev --workspace=@recruitflow/worker",
-    "build": "npm run build --workspace=@recruitflow/types && npm run build --workspace=@recruitflow/shared && npm run build --workspace=@recruitflow/validation && npm run build --workspace=@recruitflow/api && npm run build --workspace=@recruitflow/worker && npm run build --workspace=@recruitflow/web",
+    "build": "node init && npm run build --workspace=@recruitflow/types && npm run build --workspace=@recruitflow/shared && npm run build --workspace=@recruitflow/validation && npm run build --workspace=@recruitflow/api && npm run build --workspace=@recruitflow/worker && npm run build --workspace=@recruitflow/web",
     "build:packages": "npm run build --workspace=@recruitflow/types && npm run build --workspace=@recruitflow/shared && npm run build --workspace=@recruitflow/validation",
     "build:api": "npm run build --workspace=@recruitflow/api",
     "build:web": "npm run build --workspace=@recruitflow/web",
@@ -50,4 +50,3 @@
     "vitest": "^3.0.6"
   }
 }
-

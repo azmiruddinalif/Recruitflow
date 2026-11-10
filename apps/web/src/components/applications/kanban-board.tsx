@@ -51,6 +51,7 @@ interface KanbanBoardProps {
   applications: KanbanApplication[];
   candidates: CandidateLite[];
   jobs: JobLite[];
+  canEdit: boolean;
   onInspectMatch: (app: KanbanApplication) => void;
   onReorder: (updates: ReorderUpdate[]) => Promise<void>;
   onMoveStage: (applicationId: string, nextStatus: ApplicationStatus) => Promise<void>;
@@ -201,8 +202,8 @@ function SortableKanbanCard(props: {
   candidateTitle?: string;
   jobTitle?: string;
   onInspectMatch: () => void;
-  onChangeStatus: (status: ApplicationStatus) => void;
-  onAdvance: () => void;
+  onChangeStatus?: (status: ApplicationStatus) => void;
+  onAdvance?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: props.app.id,
@@ -226,6 +227,7 @@ function KanbanColumn({
   apps,
   candidates,
   jobs,
+  canEdit,
   onInspectMatch,
   onMoveStage,
 }: {
@@ -234,6 +236,7 @@ function KanbanColumn({
   apps: KanbanApplication[];
   candidates: CandidateLite[];
   jobs: JobLite[];
+  canEdit: boolean;
   onInspectMatch: (app: KanbanApplication) => void;
   onMoveStage: (applicationId: string, nextStatus: ApplicationStatus) => Promise<void>;
 }) {
@@ -278,12 +281,20 @@ function KanbanColumn({
                   candidateTitle={candidate?.currentTitle ?? undefined}
                   jobTitle={job?.title}
                   onInspectMatch={() => onInspectMatch(app)}
-                  onChangeStatus={(nextStatus) => {
-                    void onMoveStage(app.id, nextStatus);
-                  }}
-                  onAdvance={() => {
-                    if (nextStage) void onMoveStage(app.id, nextStage);
-                  }}
+                  onChangeStatus={
+                    canEdit
+                      ? (nextStatus) => {
+                          void onMoveStage(app.id, nextStatus);
+                        }
+                      : undefined
+                  }
+                  onAdvance={
+                    canEdit
+                      ? () => {
+                          if (nextStage) void onMoveStage(app.id, nextStage);
+                        }
+                      : undefined
+                  }
                 />
               );
             })
@@ -298,6 +309,7 @@ export function KanbanBoard({
   applications,
   candidates,
   jobs,
+  canEdit,
   onInspectMatch,
   onReorder,
   onMoveStage,
@@ -314,6 +326,10 @@ export function KanbanBoard({
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  // Read-only viewers (no applications.update permission) get an empty
+  // sensor set so dnd-kit never initiates a drag, instead of letting a
+  // drag start and then failing silently on the server-enforced 403.
+  const emptySensors = useSensors();
 
   const columns = React.useMemo(
     () =>
@@ -526,7 +542,7 @@ export function KanbanBoard({
   return (
     <DndContext
       id="applications-kanban-board"
-      sensors={sensors}
+      sensors={canEdit ? sensors : emptySensors}
       collisionDetection={collisionDetectionStrategy}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -544,6 +560,7 @@ export function KanbanBoard({
             apps={col.apps}
             candidates={candidates}
             jobs={jobs}
+            canEdit={canEdit}
             onInspectMatch={onInspectMatch}
             onMoveStage={onMoveStage}
           />
